@@ -1,0 +1,4 @@
+# 일일 취합 에이전트 전용. MCP 서버에는 필요 없다.
+# 클라우드 서버에는 이 파일만 설치하면 된다 (MCP 프로토콜을 쓰지 않으므로 mcp 불필요).
+-r requirements-core.txt
+anthropic==1.8.0
