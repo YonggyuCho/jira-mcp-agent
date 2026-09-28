@@ -190,10 +190,15 @@ NHN Cloud 인스턴스 타입 이름은 콘솔에서 바뀌므로, **위 사양�
 ### OS 와 Python
 
 - **Ubuntu 22.04 / 24.04 LTS** 기준으로 적는다.
-- **Python 3.11 이상.** 로컬 검증은 3.14.3 에서 했고, `anthropic` 1.x 가 3.10 이상을 요구한다.
-  [추정: 3.11/3.12 에서는 아직 돌려보지 않았다. 배포 후 `python -m agent.daily --no-llm` 으로 확인]
-- Ubuntu 24.04 의 기본 파이썬은 3.12 라 **그대로 쓰면 된다.** 3.14 를 억지로 올릴 필요 없다.
+- **Python 3.10 이상.** [확인] Ubuntu 22.04 기본 파이썬 3.10.12 에서 `anthropic==1.8.0`,
+  `httpx==0.28.1`, `python-dotenv==1.2.3` 설치와 에이전트 실행까지 확인했다.
+  로컬 개발은 3.14.3 이다. **배포판 기본 파이썬을 그대로 쓰면 되고** 새 버전을 올릴 필요 없다.
   (MCP 서버는 서버에 올리지 않으므로 `mcp` 패키지의 파이썬 요구사항은 고려 대상이 아니다.)
+
+> **함정 — `python3-venv` 가 없으면 venv 는 만들어지는데 pip 이 없다.**
+> `import venv` 는 통과하고 `python3 -m venv` 도 성공한 것처럼 보이지만,
+> 그 안의 `bin/python -m pip` 이 `No module named pip` 으로 죽는다. ensurepip 이
+> 별도 패키지이기 때문이다. 아래 설치 단계의 `python3-venv` 를 빠뜨리지 말 것.
 
 ### 네트워크
 
@@ -211,9 +216,9 @@ NHN Cloud 인스턴스 타입 이름은 콘솔에서 바뀌므로, **위 사양�
 ### 설치
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv
+sudo apt update && sudo apt install -y git python3-venv python3-pip
 sudo mkdir -p /opt/jira-mcp && sudo chown "$USER" /opt/jira-mcp
-git clone <저장소> /opt/jira-mcp
+git clone https://github.com/YonggyuCho/jira-mcp-agent.git /opt/jira-mcp
 cd /opt/jira-mcp
 
 python3 -m venv .venv
