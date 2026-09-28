@@ -1,3 +1,5 @@
-mcp>=2.0
-httpx>=0.27
-python-dotenv>=1.0
+# MCP 서버용 (Claude Code 가 stdio 로 띄우는 쪽).
+# 검증된 조합: Python 3.14.3 / mcp 2.2.0. mcp 2.x 는 1.x 에서 FastMCP -> MCPServer 로
+# 이름이 바뀌었으므로 버전을 풀면 import 부터 깨진다. docs/DEPLOYMENT.md 참고.
+-r requirements-core.txt
+mcp==2.2.0

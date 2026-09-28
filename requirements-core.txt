@@ -1,0 +1,3 @@
+# jira_mcp.client / config 가 쓰는 최소 의존성. MCP 서버와 에이전트가 공유한다.
+httpx==0.28.1
+python-dotenv==1.2.3
