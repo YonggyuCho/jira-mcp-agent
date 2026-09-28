@@ -2,3 +2,8 @@
 .venv/
 __pycache__/
 *.pyc
+
+# 조직 특정 운영 문서. 공개 저장소에 올리지 않는다.
+# 서버로는 .env 와 함께 따로 옮긴다 (docs/INTERNAL.md 참고).
+docs/internal/
+ARCHITECTURE.html
