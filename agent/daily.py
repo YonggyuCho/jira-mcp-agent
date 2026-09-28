@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     if not send:
         reason = "AGENT_WEBHOOK_URL 미설정" if not cfg.webhook_url else "dry-run"
         log.info("발송하지 않음 (%s). 아래는 보낼 내용입니다.", reason)
-        print(text)  # text 가 이미 headline 으로 시작한다
+        print(f"{title}\n\n{text}")
         return 0
 
     try:
@@ -63,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{title}\n\n{text}")  # 최소한 로그에는 남긴다
         return 1
 
-    log.info("발송 완료 — 조치 필요 %d건", len(report.findings))
+    # 헤드라인과 같은 기준(이슈 단위)으로 센다. 한 이슈가 여러 이유로 걸릴 수 있다.
+    log.info("발송 완료 — 조치 필요 %d건", len(render.group(report.findings)))
     return 0
 
 

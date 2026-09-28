@@ -32,7 +32,8 @@ def headline(report: Report) -> str:
 
 
 def body(report: Report) -> str:
-    out = [headline(report), ""]
+    """헤드라인은 넣지 않는다. 메신저가 제목란에 따로 찍기 때문에 넣으면 두 번 나온다."""
+    out = []
 
     counts = report.counts
     total = len(report.issues)
