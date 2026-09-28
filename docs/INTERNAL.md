@@ -5,6 +5,11 @@
 
 그런 내용은 `docs/internal/` 에 두고 `.gitignore` 로 제외한다.
 
+`docs/internal` 은 실제 폴더일 수도, 다른 곳을 가리키는 심볼릭 링크일 수도 있다
+(예: 서버에서 문서를 홈 디렉터리에 모아 두는 경우). `.gitignore` 가 `docs/internal`
+처럼 **끝에 `/` 없이** 적혀 있는 이유다 — `docs/internal/` 로 쓰면 폴더에만 걸리고
+링크는 걸리지 않아 커밋에 딸려 들어간다.
+
 ```
 docs/internal/          # 저장소에 올라가지 않음
 ├── HANDOFF.md          현황과 남은 일 — 다른 기계에서 이어받을 때 먼저 읽는다
@@ -17,8 +22,8 @@ docs/internal/          # 저장소에 올라가지 않음
 `git clone` 만으로는 `docs/internal/` 과 `.env` 가 따라가지 않는다. **둘을 따로 옮긴다.**
 
 ```bash
-# 보내는 쪽
-tar czf private.tar.gz .env docs/internal
+# 보내는 쪽 — -h 로 링크를 따라가 실제 파일을 담는다 (링크면 링크만 담긴다)
+tar czhf private.tar.gz .env docs/internal
 
 # 받는 쪽
 scp private.tar.gz <서버>:/opt/jira-mcp/
