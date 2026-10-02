@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = agent_config.load()
         report = collect.collect(cfg.project, cfg.solution,
-                                 due_soon_days=cfg.due_soon_days)
+                                 due_soon_days=cfg.due_soon_days, epic=cfg.epic)
     except (jira_config.ConfigError, client.JiraError) as exc:
         # 수집 실패는 조용히 넘기면 안 된다. 알림이 안 온 건지 이상이 없는 건지 구분돼야 한다.
         log.error("수집 실패 — 알림을 보내지 않습니다: %s", exc)
@@ -63,8 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{title}\n\n{text}")  # 최소한 로그에는 남긴다
         return 1
 
-    # 헤드라인과 같은 기준(이슈 단위)으로 센다. 한 이슈가 여러 이유로 걸릴 수 있다.
-    log.info("발송 완료 — 조치 필요 %d건", len(render.group(report.findings)))
+    log.info("발송 완료 — %s", render.headline(report))
     return 0
 
 

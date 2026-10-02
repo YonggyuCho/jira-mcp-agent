@@ -14,6 +14,7 @@ FORMATS = {"slack", "teams", "teams-legacy", "dooray", "raw"}
 class AgentConfig:
     project: str
     solution: str
+    epic: str
     webhook_url: str
     webhook_format: str
     model: str
@@ -53,6 +54,8 @@ def load() -> AgentConfig:
     return AgentConfig(
         project=project,
         solution=solution,
+        # 점검 범위를 이 에픽 아래로 한정한다. 비우면 솔루션 필드만으로 고른다.
+        epic=os.environ.get("AGENT_EPIC", "").strip(),
         webhook_url=os.environ.get("AGENT_WEBHOOK_URL", "").strip(),
         webhook_format=fmt,
         # 모델을 바꾸는 건 비용 결정이라 기본값을 낮추지 않는다. 필요하면 .env 에서 지정.

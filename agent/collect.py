@@ -1,6 +1,6 @@
 """솔루션 현황 수집과 판정. 여기에는 LLM 이 없다.
 
-판정 규칙은 docs/GPU-LIVE-AUDIT.md 가 원본이다. 규칙을 바꾸면 그 문서도 같이 고친다.
+판정 규칙은 docs/internal/GPU-LIVE-AUDIT.md 가 원본이다 (비공개). 규칙을 바꾸면 그 문서도 같이 고친다.
 LLM 을 쓰지 않는 이유는 매일 같은 입력에 같은 결과가 나와야 하기 때문이다 —
 '어제와 달라진 것' 을 신뢰하려면 판정이 흔들리면 안 된다.
 """
@@ -14,17 +14,31 @@ from jira_mcp import client, config
 # 대상은 .env 로 정한다 (AGENT_PROJECT / AGENT_SOLUTION). 코드에 조직 값을 박지 않는다.
 # 솔루션 필드로 고르고 담당자로 좁히지 않는다 — 솔루션 전체 현황을 보는 것이 목적이다.
 TARGET_JQL = 'project = {project} AND cf[12473] = "{solution}" ORDER BY key ASC'
-# 솔루션 값이 빠진 이슈를 찾으려고 제목으로도 한 번 긁어 대조한다.
+# 솔루션 값이 빠진 이슈를 찾으려고 제목으로도 한 번 긁어 대조한다. (에픽을 안 쓸 때만)
 TITLE_JQL = 'project = {project} AND summary ~ "{solution}" ORDER BY key ASC'
+# 에픽을 쓰면 그 아래 트리를 단계마다 따라 내려간다. JQL 은 트리를 한 번에 못 따라간다.
+CHILD_JQL = 'project = {project} AND parent in ({keys}) ORDER BY key ASC'
 
 FIELDS = [
-    "summary", "status", "assignee", "issuetype", "duedate",
+    "summary", "status", "assignee", "reporter", "issuetype", "duedate", "parent",
     "customfield_10008",  # Actual start
     "customfield_10009",  # Actual end
+    "customfield_10015",  # 시작 날짜
+    "customfield_12414",  # 엔지니어 (동명 3개 중 실제로 쓰이는 것)
+    "customfield_12428",  # 엔지니어 지원 방법 (동명 2개 중 실제로 쓰이는 것)
+    "customfield_12530",  # 이슈 분류
     "customfield_12594",  # 일정 준수 여부
     "customfield_12604",  # 지연 사유
     "customfield_12473",  # 솔루션
 ]
+
+# 불일치 판정의 기대값. 규칙 원본은 GPU-LIVE-AUDIT.md 8장.
+EXPECT_SUPPORT = "본사"
+EXPECT_CATEGORY = "고객요청"          # Jira 값은 띄어쓰기 없음
+DEFECT_CATEGORY = "솔루션 제품 결함"   # 에픽 직속 '프로젝트' 의 하위 이슈는 이쪽
+MEETING_KIND = "회의"                 # 위 예외에서 다시 빠진다
+PROJECT_KIND = "프로젝트"
+FINE = {"On Time", "Early"}
 
 # 화면 표시명 기준. JQL 로는 상태를 거를 수 없어(표시명 != JQL 상태명) 코드에서 판단한다.
 DONE = {"종료", "완료", "완료(Done)", "Done", "해결됨"}
@@ -44,6 +58,13 @@ class Issue:
     actual_end: str | None
     compliance: str | None
     delay_reason: str | None
+    reporter: str | None = None
+    engineer: str | None = None
+    start_date: str | None = None
+    support: str | None = None
+    category: str | None = None
+    solution: str | None = None
+    parent: str | None = None
     site: str = ""
 
     @property
@@ -62,12 +83,17 @@ class Issue:
         return None if self.duedate is None else (self.duedate - today).days
 
 
+RISK = "위험"
+MISMATCH = "불일치"
+
+
 @dataclass
 class Finding:
     """조치가 필요한 건 하나. reason 이 왜 걸렸는지다."""
     issue: Issue
     reason: str
     severity: int  # 낮을수록 급하다
+    category: str = RISK  # 위험 / 불일치
 
 
 @dataclass
@@ -77,6 +103,7 @@ class Report:
     issues: list[Issue]
     findings: list[Finding] = field(default_factory=list)
     hygiene: list[str] = field(default_factory=list)
+    skipped: dict[str, int] = field(default_factory=dict)  # 제외 규칙으로 뺀 건수. 한 줄로만 알린다
 
     @property
     def open_issues(self) -> list[Issue]:
@@ -137,59 +164,126 @@ def _issue(raw: dict, site: str) -> Issue:
         actual_end=_val(f.get("customfield_10009")),
         compliance=_val(f.get("customfield_12594")),
         delay_reason=_val(f.get("customfield_12604")),
+        reporter=_val(f.get("reporter")),
+        engineer=_val(f.get("customfield_12414")),
+        start_date=_val(f.get("customfield_10015")),
+        support=_val(f.get("customfield_12428")),
+        category=_val(f.get("customfield_12530")),
+        solution=_val(f.get("customfield_12473")),
+        parent=(f.get("parent") or {}).get("key"),
         site=site,
     )
 
 
-def _judge(issues: list[Issue], today: dt.date, due_soon: int) -> list[Finding]:
-    """조치가 필요한 것만 남긴다. Early 와 상위 이슈 미평가는 보고하지 않는다."""
+def _tree(c: client.JiraClient, project: str, epic: str) -> list[dict]:
+    """에픽 아래 전부. 에픽 자신은 넣지 않는다."""
+    seen: dict[str, dict] = {}
+    level = [epic]
+    while level:
+        found = []
+        for n in range(0, len(level), 50):  # JQL 길이 제한을 피한다
+            found += _page(c, CHILD_JQL.format(project=project, keys=", ".join(level[n:n + 50])))
+        level = [r["key"] for r in found if r["key"] not in seen]
+        seen.update((r["key"], r) for r in found)
+    return sorted(seen.values(), key=lambda r: int(r["key"].rsplit("-", 1)[1]))
+
+
+def _judge(issues: list[Issue], today: dt.date, due_soon: int,
+           defect_parents: set[str] | None = None,
+           skipped: dict[str, int] | None = None) -> list[Finding]:
+    """위험 / 불일치를 이유와 함께 남긴다. 규칙 원본은 GPU-LIVE-AUDIT.md 8장.
+
+    defect_parents: 이 이슈들의 바로 아래(회의 제외)는 이슈 분류가 '솔루션 제품 결함' 이어야 한다.
+    """
+    defect_parents = defect_parents or set()
+    skipped = skipped if skipped is not None else {}
     found: list[Finding] = []
     for i in issues:
         left = i.days_left(today)
 
+        # ── 위험 ────────────────────────────────────────────────
         if i.compliance == "Delayed":
-            found.append(Finding(i, f"Delayed — 사유: {i.delay_reason or '미기재'}", 0))
+            found.append(Finding(i, f"일정 준수 'Delayed' — 지연 사유: {i.delay_reason or '미기재'}", 0))
+        elif i.compliance not in FINE:
+            if i.compliance == "Not Evaluated" and not i.is_done:
+                skipped["진행 중 Not Evaluated"] = skipped.get("진행 중 Not Evaluated", 0) + 1
+            else:
+                state = "종료" if i.is_done else "진행 중"
+                found.append(Finding(i, f"일정 준수 '{i.compliance or '공란'}' ({state})", 1))
+
+        end = _date(i.actual_end)
+        if end and i.duedate and end > i.duedate:
+            note = f" — 일정 준수는 '{i.compliance}'" if i.compliance in FINE else ""
+            found.append(Finding(i, f"Actual end {end} 가 기한 {i.duedate} 보다 늦음{note}", 0))
 
         if not i.is_done and left is not None and left < 0:
-            found.append(Finding(i, f"기한 {abs(left)}일 초과 (미종료)", 1))
+            found.append(Finding(i, f"기한 {abs(left)}일 초과 (진행 중)", 0))
         elif not i.is_done and left is not None and left <= due_soon:
             when = "오늘" if left == 0 else f"{left}일 뒤"
             found.append(Finding(i, f"기한 임박 — {when} ({i.duedate})", 2))
 
-        if not i.is_done and not i.assignee:
-            found.append(Finding(i, "담당자 없음", 2))
+        empty = [name for name, got in (
+            ("보고자", i.reporter), ("담당자", i.assignee), ("엔지니어", i.engineer),
+            # 상위 이슈(프로젝트·구축)는 시작 날짜·이슈 분류를 안 채우는 게 정상이다.
+            ("시작 날짜", i.start_date if not i.is_parent else "-"),
+            ("Actual start", i.actual_start),
+            # 진행 중이면 Actual end 가 비어 있는 게 정상이다.
+            ("Actual end", i.actual_end if i.is_done else "-"),
+            ("솔루션", i.solution), ("엔지니어 지원 방법", i.support),
+            ("이슈 분류", i.category if not i.is_parent else "-"), ("기한", i.duedate),
+        ) if not got]
+        if empty:
+            found.append(Finding(i, "미기입: " + ", ".join(empty), 2))
 
-        # 끝났는데 일정 준수 여부가 안 채워진 것. 상위 이슈는 제외 규칙 대상이라 건너뛴다.
-        if i.is_done and not i.is_parent and i.compliance in (None, "Not Evaluated"):
-            found.append(Finding(i, f"종료인데 일정 준수 여부가 '{i.compliance or '공란'}'", 3))
+        # ── 불일치 / 오기입 ─────────────────────────────────────
+        if i.support and i.support != EXPECT_SUPPORT:
+            found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
+        if i.category:
+            want = (DEFECT_CATEGORY if i.parent in defect_parents and i.kind != MEETING_KIND
+                    else EXPECT_CATEGORY)
+            if i.category != want:
+                found.append(Finding(i, f"이슈 분류 '{i.category}' → {want}", 3, MISMATCH))
 
     found.sort(key=lambda f: (f.severity, f.issue.duedate or dt.date.max))
     return found
 
 
 def collect(project: str, solution: str, due_soon_days: int = 3,
-            today: dt.date | None = None) -> Report:
+            today: dt.date | None = None, epic: str = "") -> Report:
     cfg = config.load()
     c = client.JiraClient(cfg)
     today = today or dt.date.today()
+    hygiene: list[str] = []
 
-    target = TARGET_JQL.format(project=project, solution=solution)
-    title = TITLE_JQL.format(project=project, solution=solution)
-
-    issues = [_issue(r, cfg.site) for r in _page(c, target)]
-    report = Report(today=today, solution=solution, issues=issues,
-                    findings=_judge(issues, today, due_soon_days))
-
-    # 데이터 위생 — 제목엔 솔루션명이 있는데 솔루션 필드가 다른 것. 집계에서 통째로 빠진다.
-    known = {i.key for i in issues}
-    for raw in _page(c, title):
-        if raw["key"] in known:
-            continue
+    def mismatch_line(raw: dict) -> str:
         got = _val(raw["fields"].get("customfield_12473")) or "공란"
-        report.hygiene.append(
-            f"{raw['key']} 솔루션이 '{got}' 이라 {solution} 집계에서 빠짐 "
-            f"— {(raw['fields'].get('summary') or '').strip()[:40]}"
-        )
+        return (f"{raw['key']} 솔루션이 '{got}' 이라 {solution} 집계에서 빠짐 "
+                f"— {(raw['fields'].get('summary') or '').strip()[:40]}")
 
+    if epic:
+        # 범위 = 에픽 트리 AND 솔루션. 둘 다 필수다 (WORKING-RULES.md 2장).
+        tree = _tree(c, project, epic)
+        rows = [r for r in tree
+                if solution in (_val(r["fields"].get("customfield_12473")) or "").split(", ")]
+        keys = {r["key"] for r in rows}
+        hygiene += [mismatch_line(r) for r in tree if r["key"] not in keys]
+        # 에픽 직속 '프로젝트' 의 하위는 이슈 분류가 제품 결함이어야 한다.
+        defect_parents = {r["key"] for r in tree
+                          if (r["fields"].get("parent") or {}).get("key") == epic
+                          and (r["fields"].get("issuetype") or {}).get("name") == PROJECT_KIND}
+    else:
+        rows = _page(c, TARGET_JQL.format(project=project, solution=solution))
+        keys = {r["key"] for r in rows}
+        # 데이터 위생 — 제목엔 솔루션명이 있는데 솔루션 필드가 다른 것. 집계에서 통째로 빠진다.
+        hygiene += [mismatch_line(r)
+                    for r in _page(c, TITLE_JQL.format(project=project, solution=solution))
+                    if r["key"] not in keys]
+        defect_parents = set()
+
+    issues = [_issue(r, cfg.site) for r in rows]
+    skipped: dict[str, int] = {}
+    report = Report(today=today, solution=solution, issues=issues,
+                    findings=_judge(issues, today, due_soon_days, defect_parents, skipped),
+                    hygiene=hygiene, skipped=skipped)
     c.close()
     return report
