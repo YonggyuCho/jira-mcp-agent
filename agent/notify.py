@@ -5,7 +5,8 @@
 
 Teams 주의 — 웹훅 종류가 둘이고 받는 모양이 다르다.
   · Workflows(Power Automate) : 지금 발급되는 것. Adaptive Card 를 받는다.
-    URL 이 ...logic.azure.com/workflows/... 형태다.            -> teams
+    URL 이 ...logic.azure.com/workflows/... 이거나
+    ...environment.api.powerplatform.com/powerautomate/... 형태다. -> teams
   · Office 365 커넥터          : 퇴역했다. MessageCard 를 받는다.
     URL 이 ...webhook.office.com/webhookb2/... 형태다.         -> teams-legacy
 URL 모양으로 어느 쪽인지 알 수 있어서, 설정이 어긋나면 자동으로 맞춘다.
@@ -19,7 +20,8 @@ import httpx
 log = logging.getLogger(__name__)
 
 LEGACY_HOST = "webhook.office.com"
-WORKFLOW_HOST = "logic.azure.com"
+# Workflows 훅 도메인. 2025년 이후 발급분은 powerplatform.com 으로 나온다.
+WORKFLOW_HOSTS = ("logic.azure.com", "powerplatform.com")
 
 
 class NotifyError(RuntimeError):
@@ -76,7 +78,7 @@ def _resolve(fmt: str, url: str) -> str:
         log.warning("URL 이 Office 365 커넥터라 teams-legacy 로 보냅니다 "
                     "(커넥터는 퇴역했습니다 — Workflows 훅으로 옮기세요)")
         return "teams-legacy"
-    if fmt == "teams-legacy" and WORKFLOW_HOST in url:
+    if fmt == "teams-legacy" and any(h in url for h in WORKFLOW_HOSTS):
         log.warning("URL 이 Workflows 훅이라 teams 로 보냅니다")
         return "teams"
     return fmt

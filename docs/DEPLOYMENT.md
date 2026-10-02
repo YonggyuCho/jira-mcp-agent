@@ -257,7 +257,8 @@ chmod 600 .env          # 토큰이 둘이나 들어 있다
 받는 모양이 다르다 — 커넥터는 MessageCard, Workflows 는 Adaptive Card 다.
 
 Teams 채널 > `...` > **워크플로** > "웹후크 요청을 받으면 채널에 게시" 템플릿으로 만든다.
-나오는 URL 이 `https://...logic.azure.com/workflows/...` 모양이면 맞다.
+나오는 URL 이 `https://...logic.azure.com/workflows/...` 또는
+`https://...environment.api.powerplatform.com/powerautomate/...` 모양이면 맞다.
 
 `AGENT_WEBHOOK_FORMAT=teams` 가 이 방식이다. 옛 커넥터 훅
 (`...webhook.office.com/webhookb2/...`)이 아직 살아 있다면 `teams-legacy` 를 쓴다.
@@ -265,6 +266,22 @@ Teams 채널 > `...` > **워크플로** > "웹후크 요청을 받으면 채널�
 조용히 실패하지는 않는다.
 
 수락되면 Workflows 훅은 **HTTP 202** 를 돌려준다. 본문이 비어 있어도 정상이다.
+
+**202 는 "받았다" 일 뿐 "게시됐다" 가 아니다.** 흐름은 비동기로 돈다. 뒤 단계가 실패해도
+우리 쪽은 202 를 받고 exit 0 으로 끝난다. 첫 발송 후에는 반드시 채널을 눈으로 확인하고,
+안 보이면 Power Automate 의 흐름 **실행 기록**을 본다.
+
+실제로 겪은 실패:
+
+| 실행 기록의 오류 | 원인 | 고치는 곳 |
+|---|---|---|
+| `Post_card_in_a_chat_or_channel` 실패 — `Call made for a thread which is not a ChatThread` | 게시 위치가 **그룹 채팅**인데 고른 대상이 그룹 채팅이 아니다. 채널이거나, **1:1 채팅**이거나, 회의 채팅인 경우다. 그룹 채팅 옵션은 1:1 채팅을 받지 않는다 | 흐름 편집 → "채팅 또는 채널에 카드 게시" 단계에서 둘 중 하나로 고친다. ① 채널로 받기: 게시 위치 = **채널**, 팀·채널 선택. ② 나 혼자 받기: 게시자 = **Flow bot**, 게시 위치 = **Flow bot 과 채팅**, 받는 사람 = 본인 계정. "나에게 보내기" 템플릿은 그룹 채팅 칸에 `48:notes`(나에게 메모)를 넣어 두는데, 이게 이 오류의 흔한 원인이다 |
+
+게시 위치를 바꾸면 **적응형 카드 칸이 비워진다.** 동적 콘텐츠 목록에는 `content` 가 따로 없으니
+식(fx)으로 넣는다 — 분기 `Attachments is null` 의 False → For each 안이라면
+`items('For_each')?['content']`.
+
+이 경우 우리 페이로드는 문제가 아니다 — 흐름이 트리거되고 카드 단계까지 갔다는 뜻이다.
 
 **시크릿이 서버 파일로 존재하는 게 새로 생기는 위험이다.** 파일 권한을 600 으로 죄고,
 가능하면 NHN Cloud 의 시크릿 관리나 환경변수 주입으로 옮긴다 —
