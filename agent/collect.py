@@ -35,7 +35,7 @@ FIELDS = [
 # 불일치 판정의 기대값. 규칙 원본은 GPU-LIVE-AUDIT.md 8장.
 EXPECT_SUPPORT = "본사"
 EXPECT_CATEGORY = "고객요청"          # Jira 값은 띄어쓰기 없음
-DEFECT_CATEGORY = "솔루션 제품 결함"   # 에픽 직속 '프로젝트' 의 하위 이슈는 이쪽
+PROJECT_CHILD_CATEGORY = "솔루션 제품 개선"   # 에픽 직속 '프로젝트' 의 하위 이슈는 이쪽
 MEETING_KIND = "회의"                 # 위 예외에서 다시 빠진다
 PROJECT_KIND = "프로젝트"
 FINE = {"On Time", "Early"}
@@ -189,13 +189,13 @@ def _tree(c: client.JiraClient, project: str, epic: str) -> list[dict]:
 
 
 def _judge(issues: list[Issue], today: dt.date, due_soon: int,
-           defect_parents: set[str] | None = None,
+           project_parents: set[str] | None = None,
            skipped: dict[str, int] | None = None) -> list[Finding]:
     """위험 / 불일치를 이유와 함께 남긴다. 규칙 원본은 GPU-LIVE-AUDIT.md 8장.
 
-    defect_parents: 이 이슈들의 바로 아래(회의 제외)는 이슈 분류가 '솔루션 제품 결함' 이어야 한다.
+    project_parents: 이 이슈들의 바로 아래(회의 제외)는 이슈 분류가 '솔루션 제품 개선' 이어야 한다.
     """
-    defect_parents = defect_parents or set()
+    project_parents = project_parents or set()
     skipped = skipped if skipped is not None else {}
     found: list[Finding] = []
     for i in issues:
@@ -239,7 +239,7 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
         if i.support and i.support != EXPECT_SUPPORT:
             found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
         if i.category:
-            want = (DEFECT_CATEGORY if i.parent in defect_parents and i.kind != MEETING_KIND
+            want = (PROJECT_CHILD_CATEGORY if i.parent in project_parents and i.kind != MEETING_KIND
                     else EXPECT_CATEGORY)
             if i.category != want:
                 found.append(Finding(i, f"이슈 분류 '{i.category}' → {want}", 3, MISMATCH))
@@ -263,12 +263,21 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
     if epic:
         # 범위 = 에픽 트리 AND 솔루션. 둘 다 필수다 (WORKING-RULES.md 2장).
         tree = _tree(c, project, epic)
+        if not tree:
+            # 빈 트리를 '이상 없음' 으로 보내면 안 된다. 에픽이 바뀌었거나 옮겨진 경우가 대부분이다.
+            # (실제로 하위 이슈가 새 에픽으로 통째로 옮겨진 적이 있다.)
+            c.close()
+            raise client.JiraError(
+                f"에픽 {epic} 아래에 이슈가 하나도 없습니다. 하위 이슈가 다른 에픽으로 "
+                f"옮겨졌는지 확인하고 .env 의 AGENT_EPIC 을 고치세요.")
         rows = [r for r in tree
                 if solution in (_val(r["fields"].get("customfield_12473")) or "").split(", ")]
         keys = {r["key"] for r in rows}
-        hygiene += [mismatch_line(r) for r in tree if r["key"] not in keys]
-        # 에픽 직속 '프로젝트' 의 하위는 이슈 분류가 제품 결함이어야 한다.
-        defect_parents = {r["key"] for r in tree
+        # 에픽 안인데 솔루션이 다른 것 = 솔루션 오기입. 범위 밖이라 다른 규칙은 대지 않고
+        # 이 불일치 하나만 잡는다. 집계(전체 N건)에는 넣지 않는다.
+        strays = [_issue(r, cfg.site) for r in tree if r["key"] not in keys]
+        # 에픽 직속 '프로젝트' 의 하위는 이슈 분류가 제품 개선이어야 한다.
+        project_parents = {r["key"] for r in tree
                           if (r["fields"].get("parent") or {}).get("key") == epic
                           and (r["fields"].get("issuetype") or {}).get("name") == PROJECT_KIND}
     else:
@@ -278,12 +287,15 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
         hygiene += [mismatch_line(r)
                     for r in _page(c, TITLE_JQL.format(project=project, solution=solution))
                     if r["key"] not in keys]
-        defect_parents = set()
+        project_parents = set()
+        strays = []
 
     issues = [_issue(r, cfg.site) for r in rows]
     skipped: dict[str, int] = {}
-    report = Report(today=today, solution=solution, issues=issues,
-                    findings=_judge(issues, today, due_soon_days, defect_parents, skipped),
+    findings = _judge(issues, today, due_soon_days, project_parents, skipped)
+    findings += [Finding(i, f"솔루션 '{i.solution or '공란'}' → {solution} (에픽 안, 집계 제외)",
+                         3, MISMATCH) for i in strays]
+    report = Report(today=today, solution=solution, issues=issues, findings=findings,
                     hygiene=hygiene, skipped=skipped)
     c.close()
     return report
