@@ -312,6 +312,11 @@ cd /opt/jira-mcp
 ```
 
 - 서버 시간대를 먼저 확인한다 — `timedatectl set-timezone Asia/Seoul`.
+- **시간대를 바꿨으면 cron 을 재시작한다** — `sudo systemctl restart cron`. cron 은 시작할 때
+  시간대를 한 번만 읽는다. 바꾸기 전에 떠 있던 cron 은 UTC 로 계속 돌아서 `0 9 * * *` 가
+  한국 시간 18시에 실행된다. 실제로 이렇게 사흘간 저녁에 발송됐다.
+  Ubuntu 의 cron 은 crontab 의 `CRON_TZ=` 를 **무시**하니 그걸로는 못 고친다.
+  확인: 1~2분 뒤 시각으로 `date >> 파일` 작업을 걸어 찍힌 시각을 본다.
 - 로그 로테이션을 건다 (`/etc/logrotate.d/gpu-live`).
 - **수집에 실패하면 발송하지 않고 exit 1 로 끝난다.** 알림이 안 온 날과
   "이상 없는 날" 을 구분하려면 이 종료 코드를 모니터링에 물린다.
