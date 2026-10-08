@@ -58,7 +58,10 @@ def _people(rows: list[dict]) -> list[dict]:
             if isinstance(u, dict) and u.get("accountId") and u.get("active", True):
                 seen[u["accountId"]] = u.get("displayName") or u["accountId"]
                 cnt[u["accountId"]] += 1
-    return [{"id": a, "name": seen[a], "n": cnt[a]} for a, _ in cnt.most_common()]
+    # 등록 양식의 담당자·엔지니어·참조 후보에서 뺄 사람 (.env, 쉼표 구분, 표시 이름 기준).
+    # 이름은 조직 정보라 코드에 두지 않는다.
+    skip = {x.strip() for x in os.environ.get("WEB_FORM_EXCLUDE_PEOPLE", "").split(",") if x.strip()}
+    return [{"id": a, "name": seen[a], "n": cnt[a]} for a, _ in cnt.most_common() if seen[a] not in skip]
 
 
 def _build() -> dict:
