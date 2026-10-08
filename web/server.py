@@ -73,7 +73,7 @@ pre{white-space:pre-wrap;background:var(--chip);padding:12px;border-radius:8px;f
 th.s{cursor:pointer;user-select:none}th.s:after{content:" ↕";color:var(--line)}
 th.s[data-dir="asc"]:after{content:" ▲";color:var(--acc)}th.s[data-dir="desc"]:after{content:" ▼";color:var(--acc)}
 tr.flt th{padding:4px 6px;background:var(--bg)}
-tr.flt select,tr.flt input{width:100%;min-width:70px;font:inherit;font-size:.82rem;padding:3px 4px;
+tr.flt select,tr.flt input[data-col]{width:100%;min-width:70px;font:inherit;font-size:.82rem;padding:3px 4px;
 border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
 .tag{display:inline-block;font-size:.78rem;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap;margin:1px 0}
 .tag.r{background:color-mix(in srgb,var(--risk) 14%,transparent)}.tag.m{background:color-mix(in srgb,var(--mis) 14%,transparent)}
@@ -86,7 +86,8 @@ th.ep{color:var(--epic)}  /* 상위(Epic) 열은 머리글만 보라색. 칸은 
 .pop{display:none;position:fixed;z-index:20;min-width:200px;max-height:300px;overflow:auto;background:var(--card);
 border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .dd.open .pop{display:block}
-.pop label{display:flex;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;font-weight:400;white-space:nowrap;color:var(--ink);cursor:pointer}
+.pop input[type=checkbox]{width:auto;margin:0;flex:none}
+.pop label{display:flex;justify-content:flex-start;text-align:left;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;font-weight:400;white-space:nowrap;color:var(--ink);cursor:pointer}
 .pop label:hover{background:var(--chip)}.pop label.all{border-bottom:1px solid var(--line);margin-bottom:4px;font-weight:600}
 """
 
