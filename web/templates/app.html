@@ -381,13 +381,12 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
           <div class="fld full"><label class="lb" id="c-eng-label">엔지니어<span class="req">*</span></label><div class="pills" id="c-eng"></div></div>
           <div class="fld full"><label class="lb" for="c-desc">설명<span class="req">*</span><span class="hintx">비어 있으면 매일 리포트에서 '위험(미기입)' 으로 잡힌다</span></label><textarea id="c-desc" placeholder="요청 내용, 작업 범위, 참고 링크"></textarea></div>
         </div>
-        <div class="cactions"><button class="btn" type="button" id="c-reset">초기화</button><button class="btn" type="button" id="c-validate"><span class="spin"></span>검증 (dry-run)</button><button class="btn primary" type="button" id="c-submit">등록 (데모)</button></div>
+        <div class="cactions"><button class="btn" type="button" id="c-reset">초기화</button><button class="btn primary" type="button" id="c-submit"><span class="spin"></span>등록 (데모)</button></div>
       </div>
     </section>
     <aside class="side-stack">
       <div class="card"><h2>고정값 · 자동값</h2><dl class="fixed" id="c-fixed"></dl></div>
       <div class="card"><h2>등록 전 검사</h2><ul class="checks" id="c-checks"></ul></div>
-      <div class="card" id="c-vcard" hidden><h2>검증 결과 (dry-run) <span id="c-vat" style="font-weight:400;font-size:12px;color:var(--text-3)"></span></h2><div id="c-vres"></div></div>
       <div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center">Jira 로 보낼 내용 <button class="linkbtn" type="button" id="c-copy">JSON 복사</button></h2><pre class="payload" id="c-payload"></pre></div>
     </aside>
   </div>
@@ -395,6 +394,14 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 
 <div class="pop" id="pop"><div class="pop-list" id="pop-list"></div>
   <div class="pop-foot"><button class="linkbtn" id="pop-clear">필터 해제</button><button class="linkbtn" id="pop-close">닫기</button></div></div>
+
+<dialog id="vdlg"><form method="dialog" class="dlg">
+  <h3 id="v-title"></h3>
+  <p id="v-sub"></p>
+  <div id="v-list" style="margin-top:10px;max-height:46vh;overflow:auto"></div>
+  <details id="v-more" style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--text-2)">단계별 결과 모두 보기</summary><div id="v-all" style="margin-top:6px"></div></details>
+  <div class="row"><button class="btn" value="cancel" id="v-cancel">취소</button><button class="btn primary" value="ok" id="v-ok">등록</button></div>
+</form></dialog>
 
 <dialog id="dlg"><form method="dialog" class="dlg">
   <h3>지금 Teams 로 발송할까요?</h3>
@@ -805,31 +812,58 @@ function renderCreate(){
     st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; st.compAuto=true; st.catAuto=true; $("#c-end").value=today; $("#c-etime").value="18:00"; $("#c-delay").value="";
     $("#c-notices").innerHTML=""; pickParent(M.parents[0]?.key); setMode("close"); };
   $("#c-copy").onclick = ()=>{ navigator.clipboard && navigator.clipboard.writeText($("#c-payload").textContent); $("#c-copy").textContent="복사됨"; setTimeout(()=>$("#c-copy").textContent="JSON 복사",1200); };
-  // 검증 (dry-run): 서버가 Jira 읽기 API 로 각 단계가 실제로 통과할지 확인한다. 아무것도 쓰지 않는다.
-  $("#c-validate").onclick = async ()=>{
-    const b = $("#c-validate"); b.disabled = true; b.classList.add("busy");
-    $("#c-vcard").hidden = false; $("#c-vres").innerHTML = '<div class="notice run"><span class="spin"></span><span class="grow">Jira 에 확인하는 중…</span></div>';
-    try{
-      const r = await fetch("/action/validate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps()})});
-      const res = await r.json();
-      const bad = res.filter(x=>x.level==="bad").length, warn = res.filter(x=>x.level==="warn").length;
-      const head = bad ? `<div class="vsum" style="color:var(--risk)">✕ 실제 등록하면 실패할 곳 ${bad}개</div>`
-                 : warn ? `<div class="vsum" style="color:var(--mis)">! 등록은 되지만 확인할 것 ${warn}개</div>`
-                 : `<div class="vsum" style="color:var(--ok)">✓ 모든 단계 통과 — 실제로 등록해도 됩니다</div>`;
-      let html = head, last = "";
-      res.forEach(x=>{ if(x.stage!==last){ html += `<div class="vstage">${esc(x.stage)}</div>`; last = x.stage; }
-        html += `<ul class="checks"><li class="${x.level}">${x.level==="ok"?"✓":x.level==="warn"?"!":"✕"} ${esc(x.msg)}</li></ul>`; });
-      $("#c-vres").innerHTML = html; $("#c-vat").textContent = new Date().toLocaleTimeString("ko-KR");
-    }catch(e){ $("#c-vres").innerHTML = `<div class="notice err"><b>검증 실패</b><span class="grow">${esc(e.message)}</span></div>`; }
-    b.disabled = false; b.classList.remove("busy");
-  };
-  $("#c-submit").onclick = ()=>{
+  // 등록 = ① 화면 검사 → ② Dry-run 자동 실행(서버가 Jira 읽기 API 로 각 단계 확인) → ③ 결과 창에서 등록 여부를 다시 묻는다.
+  const icon = l => l==="ok" ? "✓" : l==="warn" ? "!" : "✕";
+  function listHtml(items){
+    let html = "", last = "";
+    items.forEach(x=>{ if(x.stage!==last){ html += `<div class="vstage">${esc(x.stage)}</div>`; last = x.stage; }
+      html += `<ul class="checks"><li class="${x.level}">${icon(x.level)} ${esc(x.msg)}</li></ul>`; });
+    return html;
+  }
+  async function dryRun(){
+    const r = await fetch("/action/validate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps()})});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+  function askRegister(res){
+    const bad = res.filter(x=>x.level==="bad"), warn = res.filter(x=>x.level==="warn");
+    const dlg = $("#vdlg"), mode = {open:"등록만", progress:"진행 중까지", close:"종료까지"}[st.mode];
+    if(bad.length){
+      $("#v-title").innerHTML = `<span style="color:var(--risk)">✕ Dry-run 실패 — 실제로 등록하면 실패할 곳 ${bad.length}개</span>`;
+      $("#v-sub").textContent = "아래를 고친 뒤 다시 등록을 누르세요.";
+      $("#v-list").innerHTML = listHtml(bad.concat(warn));
+      $("#v-ok").hidden = true; $("#v-cancel").textContent = "닫기";
+    } else {
+      $("#v-title").innerHTML = warn.length
+        ? `<span style="color:var(--mis)">! Dry-run 통과 — 확인할 것 ${warn.length}개</span>`
+        : `<span style="color:var(--ok)">✓ Dry-run 통과</span>`;
+      $("#v-sub").textContent = `"${$("#c-title").value.trim()}" 을(를) ${P().title} 아래에 ${st.type} 로 등록합니다 (${mode}). 등록할까요?`;
+      $("#v-list").innerHTML = warn.length ? listHtml(warn) : "";
+      $("#v-ok").hidden = false; $("#v-ok").textContent = warn.length ? "그래도 등록" : "등록"; $("#v-cancel").textContent = "취소";
+    }
+    $("#v-all").innerHTML = listHtml(res);
+    $("#v-more").open = false;
+    if(typeof dlg.showModal!=="function"){ if(!bad.length && confirm($("#v-sub").textContent)) registered(); return; }
+    dlg.returnValue = ""; dlg.showModal();
+    dlg.addEventListener("close", ()=>{ if(dlg.returnValue==="ok") registered(); }, {once:true});
+  }
+  function registered(){
+    // 데모: 실제로는 여기서 서버가 1~4단계를 차례로 보낸다.
+    $("#c-notices").innerHTML = `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">Dry-run 은 통과했습니다. 실제 등록을 켜면 오른쪽 "Jira 로 보낼 내용" 의 요청이 순서대로 나갑니다.</span></div>`;
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  $("#c-submit").onclick = async ()=>{
     st.touched = true; update();
     const bad = checks().filter(c=>c[0]==="bad");
-    $("#c-notices").innerHTML = bad.length
-      ? `<div class="notice err"><b>입력이 부족합니다</b><span class="grow">${bad.map(b=>esc(b[1])).join(" · ")}</span></div>`
-      : `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">오른쪽 "Jira 로 보낼 내용" 이 실제 등록 때 순서대로 보낼 요청입니다. 실제 등록은 쓰기 권한을 붙인 뒤에 켭니다.</span></div>`;
-    window.scrollTo({top:0,behavior:"smooth"});
+    if(bad.length){
+      $("#c-notices").innerHTML = `<div class="notice err"><b>입력이 부족합니다</b><span class="grow">${bad.map(b=>esc(b[1])).join(" · ")}</span></div>`;
+      window.scrollTo({top:0,behavior:"smooth"}); return;
+    }
+    const b = $("#c-submit"); b.disabled = true; b.classList.add("busy"); b.lastChild.textContent = "Dry-run 중…";
+    $("#c-notices").innerHTML = `<div class="notice run"><span class="spin"></span><span class="grow">Dry-run — Jira 에 각 단계가 통과할지 확인하는 중입니다 (아무것도 쓰지 않음)</span></div>`;
+    try{ const res = await dryRun(); $("#c-notices").innerHTML = ""; askRegister(res); }
+    catch(e){ $("#c-notices").innerHTML = `<div class="notice err"><b>Dry-run 을 못 했습니다</b><span class="grow">${esc(e.message)} — 등록하지 않았습니다.</span></div>`; }
+    b.disabled = false; b.classList.remove("busy"); b.lastChild.textContent = "등록 (데모)";
   };
   pickParent(st.parent); setMode(st.mode);
 }
