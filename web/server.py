@@ -33,12 +33,12 @@ TRIGGER = {"cron": "자동", "web": "웹", "manual": "수동"}
 
 CSS = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1c1e21;--mute:#65676b;--line:#e1e4e8;--acc:#2f5fd0;
---risk:#c62828;--warn:#a86400;--mis:#c2410c;--ok:#2e7d32;--chip:#eef1f7}
+--risk:#c62828;--warn:#a86400;--mis:#c2410c;--ok:#2e7d32;--chip:#eef1f7;--epic:#7c3aed}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141518;--card:#1e1f23;
 --ink:#e8e8ea;--mute:#a0a4ab;--line:#33363c;--acc:#7aa2ff;--risk:#ff6b6b;--warn:#ffb74d;
---mis:#ff9e57;--ok:#7bd88f;--chip:#262a34}}
+--mis:#ff9e57;--ok:#7bd88f;--chip:#262a34;--epic:#c4a5ff}}
 :root[data-theme="dark"]{--bg:#141518;--card:#1e1f23;--ink:#e8e8ea;--mute:#a0a4ab;--line:#33363c;
---acc:#7aa2ff;--risk:#ff6b6b;--warn:#ffb74d;--mis:#ff9e57;--ok:#7bd88f;--chip:#262a34}
+--acc:#7aa2ff;--risk:#ff6b6b;--warn:#ffb74d;--mis:#ff9e57;--ok:#7bd88f;--chip:#262a34;--epic:#c4a5ff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
 font:15px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
 header{background:var(--card);border-bottom:1px solid var(--line)}
@@ -70,18 +70,68 @@ ul.rs{margin:0;padding-left:16px}ul.rs li{margin:1px 0}
 .small{font-size:.85rem}.new{color:var(--risk);font-weight:600}.gone{color:var(--ok);font-weight:600}
 pre{white-space:pre-wrap;background:var(--chip);padding:12px;border-radius:8px;font-size:.85rem}
 .msg{padding:10px 14px;border-radius:8px;background:var(--chip);margin:12px 0}
+th.s{cursor:pointer;user-select:none}th.s:after{content:" ↕";color:var(--line)}
+th.s[data-dir="asc"]:after{content:" ▲";color:var(--acc)}th.s[data-dir="desc"]:after{content:" ▼";color:var(--acc)}
+tr.flt th{padding:4px 6px;background:var(--bg)}
+tr.flt select,tr.flt input{width:100%;min-width:70px;font:inherit;font-size:.82rem;padding:3px 4px;
+border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.tag{display:inline-block;font-size:.78rem;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap;margin:1px 0}
+.tag.r{background:color-mix(in srgb,var(--risk) 14%,transparent)}.tag.m{background:color-mix(in srgb,var(--mis) 14%,transparent)}
+.tag.ok{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.cnt{color:var(--mute);font-size:.85rem;margin-left:auto}
+td.ttl{font-weight:700}  /* 제목이 가장 중요하다 (사용자 요청) */
+th.ep{color:var(--epic)}  /* 상위(Epic) 열은 머리글만 보라색. 칸은 다른 열과 같게 */
+.dd>button{width:100%;text-align:left;font-size:.82rem;padding:3px 6px;border-radius:6px;white-space:nowrap}
+.dd.on>button{border-color:var(--acc);color:var(--acc);font-weight:600}
+.pop{display:none;position:fixed;z-index:20;min-width:200px;max-height:300px;overflow:auto;background:var(--card);
+border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.dd.open .pop{display:block}
+.pop label{display:flex;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;font-weight:400;white-space:nowrap;color:var(--ink);cursor:pointer}
+.pop label:hover{background:var(--chip)}.pop label.all{border-bottom:1px solid var(--line);margin-bottom:4px;font-weight:600}
 """
 
 JS = """
-const chips=[...document.querySelectorAll('.chip')],q=document.getElementById('q');
-function apply(){const on=chips.filter(c=>c.classList.contains('on')).map(c=>c.dataset.f);
- const t=(q&&q.value||'').toLowerCase();
- document.querySelectorAll('tr[data-f]').forEach(r=>{
-  const okF=!on.length||on.some(f=>r.dataset.f.includes(f));
-  const okT=!t||r.textContent.toLowerCase().includes(t);
-  r.style.display=okF&&okT?'':'none';});}
-chips.forEach(c=>c.onclick=()=>{c.classList.toggle('on');apply();});
-if(q)q.oninput=apply;
+// 엑셀처럼: 머리글 클릭 = 정렬, 머리글 아래 = 열별 필터(체크박스로 여러 개 선택 / 글자 포함). 상단 검색은 모든 열.
+const tb=document.querySelector('table.grid tbody'),q=document.getElementById('q'),cnt=document.getElementById('cnt');
+const cell=(r,i)=>r.children[i];
+const val=(r,i)=>{const c=cell(r,i);return c.dataset.v!==undefined?c.dataset.v:c.textContent.trim();};
+const dds=[...document.querySelectorAll('.dd')];
+function apply(){if(!tb)return;const t=(q&&q.value||'').toLowerCase();let n=0;
+ const ins=[...document.querySelectorAll('tr.flt input[data-col]')];
+ [...tb.rows].forEach(r=>{let ok=!t||r.textContent.toLowerCase().includes(t);
+  dds.forEach(dd=>{if(!ok||!dd.sel)return;const x=val(r,+dd.dataset.col);
+   const vs=dd.dataset.multi?x.split('|'):[x];ok=vs.some(v=>dd.sel.has(v));});
+  ins.forEach(i=>{if(ok&&i.value)ok=val(r,+i.dataset.col).toLowerCase().includes(i.value.toLowerCase());});
+  r.style.display=ok?'':'none';if(ok)n++;});
+ if(cnt)cnt.textContent=n+' / '+tb.rows.length+'건';}
+function box(text,checked,cls){const l=document.createElement('label');if(cls)l.className=cls;
+ const c=document.createElement('input');c.type='checkbox';c.checked=checked;l.append(c,document.createTextNode(text));return [l,c];}
+dds.forEach(dd=>{const col=+dd.dataset.col,multi=!!dd.dataset.multi,seen=new Set();
+ if(tb)[...tb.rows].forEach(r=>(multi?val(r,col).split('|'):[val(r,col)]).forEach(v=>v&&seen.add(v)));
+ const vals=[...seen].sort((a,b)=>a.localeCompare(b,'ko',{numeric:true}));
+ const pop=dd.querySelector('.pop'),btn=dd.querySelector('button');
+ const [allL,all]=box('(전체)',true,'all');pop.append(allL);
+ const items=vals.map(v=>{const [l,c]=box(v,true);c.value=v;pop.append(l);return c;});
+ dd.sel=null; // null = 전체
+ function sync(){const on=items.filter(c=>c.checked).map(c=>c.value);
+  all.checked=on.length===items.length;all.indeterminate=on.length>0&&on.length<items.length;
+  dd.sel=all.checked?null:new Set(on);dd.classList.toggle('on',!!dd.sel);
+  btn.textContent=(dd.sel?(on.length?on.length+'개 선택':'선택 없음'):'(전체)')+' ▾';apply();}
+ all.onchange=()=>{items.forEach(c=>c.checked=all.checked);sync();};
+ items.forEach(c=>c.onchange=sync);
+ btn.onclick=e=>{e.stopPropagation();const open=!dd.classList.contains('open');
+  dds.forEach(x=>x.classList.remove('open'));
+  if(open){const b=btn.getBoundingClientRect();pop.style.left=Math.min(b.left,innerWidth-220)+'px';
+   pop.style.top=(b.bottom+4)+'px';dd.classList.add('open');}};
+ pop.onclick=e=>e.stopPropagation();});
+document.addEventListener('click',()=>dds.forEach(x=>x.classList.remove('open')));
+addEventListener('scroll',()=>dds.forEach(x=>x.classList.remove('open')),true);
+document.querySelectorAll('tr.flt input[data-col]').forEach(i=>i.oninput=apply);
+document.querySelectorAll('th.s').forEach(th=>th.onclick=()=>{const c=+th.dataset.col,
+ dir=th.dataset.dir==='asc'?'desc':'asc';document.querySelectorAll('th.s').forEach(h=>delete h.dataset.dir);th.dataset.dir=dir;
+ const rows=[...tb.rows].sort((a,b)=>{const x=cell(a,c).dataset.s??val(a,c),y=cell(b,c).dataset.s??val(b,c);
+  return (dir==='asc'?1:-1)*x.localeCompare(y,'ko',{numeric:true});});rows.forEach(r=>tb.appendChild(r));});
+if(q)q.oninput=apply;apply();
 document.querySelectorAll('form.act').forEach(f=>f.onsubmit=e=>{
  if(f.dataset.confirm&&!confirm(f.dataset.confirm)){e.preventDefault();return;}
  f.querySelectorAll('button').forEach(b=>{b.disabled=true;b.textContent='실행 중…';});});
@@ -139,26 +189,45 @@ def report_view(run: dict, prev: dict | None, msg: str = "") -> str:
         out.append(f'<div class="card small">이전 리포트({esc(d["base"].replace("T", " "))}) 대비 — '
                    f'<span class="new">새로 걸림: {esc(new)}</span> · <span class="gone">해결: {esc(gone)}</span></div>')
 
-    out.append("""<div class="card"><div class="row">
-<span class="chip" data-f="risk">🔴 위험</span><span class="chip" data-f="mismatch">🟠 불일치</span>
-<span class="chip" data-f="ok">✅ 정상</span><input id="q" type="search" placeholder="키·제목·담당자 검색"></div></div>""")
+    out.append("""<div class="card"><div class="row"><input id="q" type="search"
+placeholder="전체 검색 — 키·제목·담당자·이유"><span id="cnt" class="cnt"></span></div>
+<p class="small mute" style="margin:6px 0 0">머리글을 누르면 정렬, 머리글 아래 칸으로 열마다 거를 수 있습니다.</p></div>""")
 
     rows = []
     for r in sorted(rep["rows"], key=lambda r: (0 if r["risk"] else 1 if r["mismatch"] else 2, r["severity"],
                                                 int(r["issue"]["key"].rsplit("-", 1)[1]))):
         i = r["issue"]
-        flags = " ".join(f for f in ("risk", "mismatch") if r[f]) or "ok"
-        reasons = "".join(f'<li class="{"r" if r["severity"] <= 1 else "w"}">{esc(x)}</li>' for x in r["risk"])
+        cats = [c for c, on in (("위험", r["risk"]), ("불일치", r["mismatch"])) if on] or ["정상"]
+        tags = "".join(f'<span class="tag {"r" if c == "위험" else "m" if c == "불일치" else "ok"}">'
+                       f'{"🔴" if c == "위험" else "🟠" if c == "불일치" else "✅"} {c}</span> ' for c in cats)
+        rank = 0 if r["risk"] else 1 if r["mismatch"] else 2
+        reasons = "".join(f'<li class="r">{esc(x)}</li>' for x in r["risk"])
         reasons += "".join(f'<li class="m">{esc(x)}</li>' for x in r["mismatch"])
         if not reasons:
             reasons = '<li class="ok">정상</li>'
         mark = "🆕 " if i["key"] in d["new"] else ""
-        rows.append(f"""<tr data-f="{flags}"><td class="k">{mark}<a href="{esc(i['url'])}" target="_blank" rel="noopener">{esc(i['key'])}</a></td>
-<td>{esc(i['summary'])}<div class="small mute">{esc(i['kind'])}</div></td><td>{esc(i['status'])}</td>
-<td>{esc(i['assignee'] or '없음')}</td><td>{esc(i['duedate'] or '-')}</td><td>{esc(i['compliance'] or '-')}</td>
-<td><ul class="rs">{reasons}</ul></td></tr>""")
-    out.append(f"""<div class="card tw"><table><thead><tr><th>키</th><th>제목</th><th>상태</th><th>담당</th>
-<th>기한</th><th>일정 준수</th><th>판정 · 이유</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>""")
+        num = i["key"].rsplit("-", 1)[1]
+        rows.append(f"""<tr><td data-v="{'|'.join(cats)}" data-s="{rank}{r['severity']}">{tags}</td>
+<td class="ep">{esc(i.get('parent_title') or '-')}</td>
+<td class="k" data-v="{esc(i['key'])}" data-s="{int(num):08d}">{mark}<a href="{esc(i['url'])}" target="_blank" rel="noopener">{esc(i['key'])}</a></td>
+<td class="ttl">{esc(i['summary'])}</td><td>{esc(i['kind'])}</td>
+<td>{esc(i['status'])}</td><td>{esc(i['assignee'] or '없음')}</td><td>{esc(i['duedate'] or '-')}</td>
+<td>{esc(i['compliance'] or '-')}</td><td><ul class="rs">{reasons}</ul></td></tr>""")
+    # (머리글, 필터 종류). 필터 종류는 열 이름에 붙여 둔다 — 열 순서를 바꿔도 엉뚱한 열을 거르지 않게.
+    cols = [("판정", "multi"), ("상위 (Epic)", "select"), ("키", "input"), ("제목", "input"), ("유형", "select"),
+            ("상태", "select"), ("담당", "select"), ("기한", None), ("일정 준수", "select"), ("이유", "input")]
+    flt = []
+    for n, (_, k) in enumerate(cols):
+        if k in ("select", "multi"):
+            flt.append(f'<th><div class="dd" data-col="{n}"{" data-multi=1" if k == "multi" else ""}>'
+                       f'<button type="button">(전체) ▾</button><div class="pop"></div></div></th>')
+        elif k == "input":
+            flt.append(f'<th><input data-col="{n}" placeholder="포함"></th>')
+        else:
+            flt.append("<th></th>")
+    th = "".join(f'<th class="s{" ep" if h.startswith("상위") else ""}" data-col="{n}">{h}</th>' for n, (h, _) in enumerate(cols))
+    out.append(f"""<div class="card tw"><table class="grid"><thead><tr>{th}</tr><tr class="flt">{''.join(flt)}</tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div>""")
     if rep.get("skipped"):
         out.append('<p class="small mute">제외: ' + esc(", ".join(f"{k} {v}건" for k, v in rep["skipped"].items())) + "</p>")
     if run.get("text"):

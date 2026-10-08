@@ -104,6 +104,7 @@ class Report:
     findings: list[Finding] = field(default_factory=list)
     hygiene: list[str] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)  # 제외 규칙으로 뺀 건수. 한 줄로만 알린다
+    titles: dict[str, str] = field(default_factory=dict)   # 키 → 제목. 화면의 '상위' 열에 쓴다
 
     @property
     def open_issues(self) -> list[Issue]:
@@ -276,6 +277,11 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
         # 에픽 안인데 솔루션이 다른 것 = 솔루션 오기입. 범위 밖이라 다른 규칙은 대지 않고
         # 이 불일치 하나만 잡는다. 집계(전체 N건)에는 넣지 않는다.
         strays = [_issue(r, cfg.site) for r in tree if r["key"] not in keys]
+        titles = {r["key"]: (r["fields"].get("summary") or "").strip() for r in tree}
+        try:
+            titles[epic] = (c.get(f"/issue/{epic}", params={"fields": "summary"})["fields"].get("summary") or "").strip()
+        except client.JiraError:
+            pass  # 제목 하나 때문에 리포트를 멈추지 않는다
         # 에픽 직속 '프로젝트' 의 하위는 이슈 분류가 제품 개선이어야 한다.
         project_parents = {r["key"] for r in tree
                           if (r["fields"].get("parent") or {}).get("key") == epic
@@ -289,6 +295,7 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
                     if r["key"] not in keys]
         project_parents = set()
         strays = []
+        titles = {r["key"]: (r["fields"].get("summary") or "").strip() for r in rows}
 
     issues = [_issue(r, cfg.site) for r in rows]
     skipped: dict[str, int] = {}
@@ -296,6 +303,6 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
     findings += [Finding(i, f"솔루션 '{i.solution or '공란'}' → {solution} (에픽 안, 집계 제외)",
                          3, MISMATCH) for i in strays]
     report = Report(today=today, solution=solution, issues=issues, findings=findings,
-                    hygiene=hygiene, skipped=skipped)
+                    hygiene=hygiene, skipped=skipped, titles=titles)
     c.close()
     return report
