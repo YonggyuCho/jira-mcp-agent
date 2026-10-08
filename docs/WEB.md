@@ -22,7 +22,10 @@ cron (평일 09:00) ─┐
 |---|---|
 | `agent/store.py` | 실행마다 결과를 JSON 으로 저장. 성공·실패 모두. 웹·이력·"이전 대비" 의 원천 |
 | `agent/daily.py` | `--trigger cron/web/manual` 로 출처를 남긴다. 기록 저장 실패는 종료 코드에 영향 없음 |
-| `web/server.py` | 화면. **표준 라이브러리만** 쓴다 (서버 이전 시 설치할 것을 늘리지 않으려고) |
+| `web/server.py` | 화면 서버 (v2). **표준 라이브러리만** 쓴다. 판정 결과를 JSON 으로 만들어 템플릿에 넣는다 |
+| `web/templates/app.html` | **화면 모양 전부** — Claude 디자인 목업을 옮긴 것. CSS·JS 인라인, 외부 리소스 없음. 서버는 `/*__DATA__*/null` 자리에 JSON 만 넣는다 |
+| `web/server_v1.py` | **백업** — 디자인 개편 전 화면 (서버가 HTML 을 직접 만들던 판) |
+| `web/__main__.py` | `python -m web` — `.env` 의 `WEB_UI` 로 판을 고른다. 기본 v2, `WEB_UI=v1` 이면 백업 |
 | `runs/` | 실행 기록. 이슈 키·담당자 이름이 있어 **`.gitignore` 로 제외** |
 
 ### 깨면 안 되는 것
@@ -68,6 +71,20 @@ cron (평일 09:00) ─┐
 
 ---
 
+### 화면 판 바꾸기 (되돌리기)
+
+사용자가 "예전 화면으로" 라고 하면 **Claude 가 직접** 한다 (사용자 지시).
+
+```bash
+echo 'WEB_UI=v1' >> /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web   # 예전 화면
+sed -i '/^WEB_UI=/d' /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web  # 새 화면
+```
+
+디자인만 바꿀 때는 `web/templates/app.html` 만 고친다. 데이터 모양(`DATA.report.rows[]` 등)은
+`web/server.py` 의 `_report()` 가 정한다 — 템플릿과 같이 맞춘다.
+
+---
+
 ## 3. 운영
 
 ```bash
@@ -83,7 +100,7 @@ ls runs/$(date +%F)/                     # 오늘 실행 기록
 
 - **agent 쪽(판정·렌더)만 고쳤으면 웹 재시작은 필요 없다.** 버튼이 매번 새 프로세스로 agent 를 실행하고,
   화면은 저장된 JSON 을 읽기 때문이다. 다만 화면에는 **다음 실행부터** 새 규칙이 반영된다 — 바로 보려면 미리보기.
-- `web/server.py`·`agent/store.py` 를 고쳤으면 재시작한다 (store 는 웹이 import 한다).
+- `web/server.py`·`agent/store.py` 를 고쳤으면 재시작한다 (store 는 웹이 import 한다). `app.html` 은 요청마다 읽으므로 재시작 없이 반영된다.
 - 화면을 고친 뒤에는 `curl -s https://<도메인>/ | grep ...` 으로 HTML 이 바뀌었는지 본다.
   **서버에는 브라우저가 없어 클릭·모양 확인은 못 한다** — 사용자 스크린샷으로 확인한다.
 
@@ -105,6 +122,7 @@ ls runs/$(date +%F)/                     # 오늘 실행 기록
 | 2026-10-08 | nginx basic auth 를 붙였다가 사용자 결정으로 제거 — 보안 그룹으로 통제 |
 | 2026-10-08 | 표 개편 — 상위(Epic) 열, 엑셀식 정렬·체크박스 필터, 제목 굵게, 색 통일 |
 | 2026-10-08 | 필터 체크박스가 입력칸 스타일(`width:100%`)을 받아 어긋나던 버그 수정 |
+| 2026-10-08 | **v2 디자인** — Claude 디자인 목업 적용: 요약 카드("오늘 고칠 것"), Epic 별로 묶기, 행 왼쪽 색 띠, 발송 확인 창, 실행 중 표시, 모바일 카드 보기. 템플릿 분리. 예전 화면은 `server_v1.py` 로 백업 |
 
 ## 5. 다음 후보
 

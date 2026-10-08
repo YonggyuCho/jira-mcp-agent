@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Live 에이전트</title>
+<style>
+/* ===== 색 토큰 ===== */
+:root{
+  --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#F0F2F5; --border:#E1E4E8; --border-strong:#C9CED5;
+  --text:#1B1F24; --text-2:#56606B; --text-3:#87909A;
+  --accent:#2D5BE3; --accent-hover:#2349BE; --accent-text:#FFFFFF; --accent-bg:#EAF0FD;
+  --risk:#C4262E; --risk-bg:#FDECEC; --risk-border:#F3C1C3;
+  --mis:#B4530A; --mis-bg:#FEF0E3; --mis-border:#F5CDA5;
+  --ok:#1E7B39; --ok-bg:#E7F4EB; --ok-border:#B5DDC1;
+  --epic:#6B3FC4; --epic-bg:rgba(107,63,196,.07);
+  --row-hover:#F7F8FA; --shadow:0 8px 24px rgba(20,24,31,.12);
+  --font:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0E1115; --surface:#161A20; --surface-2:#1D2229; --border:#2A3039; --border-strong:#3A424D;
+    --text:#E6E9ED; --text-2:#A2ABB5; --text-3:#6F7882;
+    --accent:#5B86FF; --accent-hover:#7A9DFF; --accent-text:#0E1115; --accent-bg:#1A2645;
+    --risk:#FF7C82; --risk-bg:#3A1B1E; --risk-border:#6A2C31;
+    --mis:#FFAD5E; --mis-bg:#38250F; --mis-border:#6A4520;
+    --ok:#5DD08B; --ok-bg:#14301F; --ok-border:#23523A;
+    --epic:#B59CFF; --epic-bg:rgba(181,156,255,.09);
+    --row-hover:#1A1F26; --shadow:0 8px 24px rgba(0,0,0,.5);
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font:inherit;color:inherit}
+
+/* ===== 상단 바 ===== */
+.topbar{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--border)}
+.topbar-in{max-width:1480px;margin:0 auto;padding:0 24px;height:52px;display:flex;align-items:center;gap:28px}
+.brand{font-weight:700;font-size:15px;white-space:nowrap}
+.tabs{display:flex;gap:4px;height:100%}
+.tab{display:flex;align-items:center;padding:0 12px;color:var(--text-2);border-bottom:2px solid transparent;font-weight:600}
+.tab:hover{text-decoration:none;color:var(--text)}
+.tab.on{color:var(--text);border-bottom-color:var(--accent)}
+
+.wrap{max-width:1480px;margin:0 auto;padding:24px 24px 64px}
+
+/* ===== 제목 영역 ===== */
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.head h1{font-size:22px;line-height:1.3;margin:0 0 4px}
+.head h1 .sep{color:var(--text-3);font-weight:400}
+.meta{color:var(--text-2);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.meta .dot{width:3px;height:3px;border-radius:50%;background:var(--text-3)}
+.meta .hook{font-family:var(--mono);font-size:12px;padding:1px 6px;border-radius:4px;background:var(--surface-2)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions form{margin:0}
+.btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);cursor:pointer;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn small{font-weight:400;color:var(--text-2);font-size:12px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn:disabled{opacity:.55;cursor:progress}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite;display:none}
+.busy .spin{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== 알림 줄 ===== */
+.notice{margin-top:16px;padding:10px 14px;border-radius:8px;border:1px solid;display:flex;gap:10px;align-items:center;font-size:13px}
+.notice b{font-weight:700}
+.notice.ok{background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok)}
+.notice.err{background:var(--risk-bg);border-color:var(--risk-border);color:var(--risk)}
+.notice.run{background:var(--accent-bg);border-color:transparent;color:var(--accent)}
+.notice .grow{flex:1}
+.notice.run .spin{display:inline-block}
+
+/* ===== 요약: 고칠 것 우선 ===== */
+.summary{margin-top:20px;display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:16px}
+.fix{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.fix-title{font-size:13px;font-weight:700;color:var(--text-2)}
+.fix-nums{display:flex;gap:12px;flex:1}
+.kpi{flex:1;display:flex;flex-direction:column;justify-content:center;border-radius:10px;padding:12px 14px;border:1px solid;cursor:pointer;text-align:left;background:none}
+.kpi .n{font-size:34px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:13px;font-weight:700}
+.kpi.risk{background:var(--risk-bg);border-color:var(--risk-border);color:var(--risk)}
+.kpi.mis{background:var(--mis-bg);border-color:var(--mis-border);color:var(--mis)}
+.kpi.zero{opacity:.55}
+.kpi:hover{filter:brightness(.98)}
+.side{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 20px;display:flex;flex-direction:column;gap:10px}
+.side .mini+.mini{border-top:1px solid var(--border);padding-top:12px}
+.mini .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.mini .l{font-size:12px;color:var(--text-2);font-weight:600}
+.mini.ok .n{color:var(--ok)}
+.mini .sub{font-size:12px;color:var(--text-3)}
+
+/* ===== 이상 없음 ===== */
+.allclear{margin-top:20px;background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:12px;padding:28px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.allclear .big{font-size:40px;line-height:1}
+.allclear h2{margin:0;font-size:20px;color:var(--ok)}
+.allclear p{margin:2px 0 0;color:var(--text-2)}
+.allclear .grow{flex:1;min-width:220px}
+
+/* ===== 도구 바 ===== */
+.toolbar{margin-top:24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:0 12px;height:32px;font-size:13px;font-weight:600;color:var(--text-2);cursor:pointer;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.on{background:var(--text);color:var(--surface)}
+.search{flex:1;min-width:200px;max-width:360px;height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.count{font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.count b{color:var(--text)}
+.linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:0}
+.hint{margin-left:auto;font-size:12px;color:var(--text-3)}
+
+/* ===== 표 ===== */
+.tablebox{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:calc(100vh - 140px)}
+table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1280px}
+.grid th,.grid td{text-align:left;vertical-align:top;padding:10px 10px;border-bottom:1px solid var(--border)}
+.grid thead th{position:sticky;z-index:3;background:var(--surface-2)}
+.grid thead tr.hrow th{top:0;font-size:12px;font-weight:700;color:var(--text-2);cursor:pointer;user-select:none;white-space:nowrap;border-bottom:0;padding-bottom:4px}
+.grid thead tr.hrow th:hover{color:var(--text)}
+.grid thead tr.hrow th .arr{color:var(--accent);margin-left:2px}
+.grid thead tr.frow th{top:31px;padding-top:2px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)}
+.grid th.c-parent{color:var(--epic) !important}  /* 상위(Epic): 머리글만 보라. 칸 배경은 칠하지 않는다 (사용자 요구) */
+.fbtn{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:12px;color:var(--text-3);text-align:left;padding:0 6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:4px;white-space:nowrap}
+.fbtn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);font-weight:700}
+.finp{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:12px;padding:0 6px}
+.finp.on{border-color:var(--accent);background:var(--accent-bg)}
+
+.grid tbody tr:hover td{background:var(--row-hover)}
+.grid td:first-child{box-shadow:inset 3px 0 0 var(--stripe,transparent)}
+tr.v-risk{--stripe:var(--risk)} tr.v-mis{--stripe:var(--mis)} tr.v-ok{--stripe:transparent}
+tr.v-ok td{color:var(--text-2)}
+tr.v-ok td.c-title{color:var(--text)}
+.c-verdict{width:96px}
+.c-parent{width:170px;font-size:13px;color:var(--text-2)}
+.c-key{width:104px;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
+.c-title{min-width:240px;font-weight:700;font-size:14px;line-height:1.45}
+.c-kind{width:112px;font-size:13px}
+.c-status{width:84px;white-space:nowrap;font-size:13px}
+.c-assignee{width:84px;white-space:nowrap;font-size:13px}
+.c-due{width:96px;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
+.c-comp{width:116px;white-space:nowrap;font-size:13px}
+.c-reason{min-width:300px;width:30%}
+.kind-sub{display:block;font-size:11px;color:var(--text-3)}
+.none{color:var(--text-3);font-style:italic}
+
+.badges{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:11px;font-size:12px;font-weight:700;border:1px solid;white-space:nowrap}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge.risk{color:var(--risk);background:var(--risk-bg);border-color:var(--risk-border)}
+.badge.mis{color:var(--mis);background:var(--mis-bg);border-color:var(--mis-border)}
+.badge.ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-border)}
+.badge.mis::before{border-radius:2px;transform:rotate(45deg);width:6px;height:6px}
+.badge.ok::before{content:"✓";width:auto;height:auto;background:none;font-size:11px}
+
+.st{display:inline-flex;align-items:center;gap:6px}
+.st::before{content:"";width:7px;height:7px;border-radius:50%;border:1.5px solid var(--text-3)}
+.st.done::before{background:var(--text-3)}
+.comp-delayed{color:var(--risk);font-weight:600}
+
+.reasons{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:13px;line-height:1.45}
+.reasons li{display:flex;gap:6px}
+.reasons li::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;margin-top:7px;background:currentColor}
+.reasons li.r{color:var(--risk)}
+.reasons li.m{color:var(--mis)}
+.reasons li.m::before{border-radius:1px;transform:rotate(45deg);width:5px;height:5px}
+.reasons li.o{color:var(--ok)}
+.reasons li.o::before{display:none}
+
+tr.grp td{background:var(--surface-2);padding:8px 10px;cursor:pointer;font-size:13px;box-shadow:none}
+tr.grp:hover td{background:var(--surface-2)}
+.grp-in{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grp-car{width:14px;color:var(--text-3);transition:transform .15s}
+tr.grp.closed .grp-car{transform:rotate(-90deg)}
+.grp-name{font-weight:700}
+.grp-tag{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--epic);background:var(--epic-bg);padding:1px 6px;border-radius:4px}
+.grp-cnt{font-size:12px;color:var(--text-2)}
+.grp-cnt .r{color:var(--risk);font-weight:700}
+.grp-cnt .m{color:var(--mis);font-weight:700}
+
+.diffline{margin-top:12px;font-size:13px;color:var(--text-2);display:flex;flex-wrap:wrap;gap:4px 14px}
+.diffline .new{color:var(--risk);font-weight:700}.diffline .gone{color:var(--ok);font-weight:700}
+.empty-row td{text-align:center;color:var(--text-3);padding:32px}
+.foot{margin-top:8px;font-size:12px;color:var(--text-3)}
+
+/* ===== 필터 팝업 ===== */
+.pop{position:absolute;z-index:50;min-width:220px;max-width:320px;background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:none}
+.pop.open{display:block}
+.pop-list{max-height:280px;overflow:auto}
+.pop label{display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;text-align:left}
+.pop label:hover{background:var(--surface-2)}
+.pop label input{flex:none;width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.pop label .v{flex:1;min-width:0}
+.pop label .c{flex:none;font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.pop label.all{font-weight:700;border-bottom:1px solid var(--border);border-radius:6px 6px 0 0;margin-bottom:4px}
+.pop-foot{display:flex;justify-content:space-between;padding:6px 8px 2px;border-top:1px solid var(--border);margin-top:4px}
+
+/* ===== Teams 본문 ===== */
+details.raw{margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+details.raw summary{padding:12px 16px;cursor:pointer;font-weight:600;font-size:13px;color:var(--text-2)}
+details.raw pre{margin:0;padding:0 16px 16px;font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--text)}
+
+/* ===== 실행 기록 ===== */
+.runs-intro{color:var(--text-2);font-size:13px;margin:6px 0 16px;max-width:820px}
+table.runs{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
+.runs th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:12px;color:var(--text-2);padding:10px 12px;border-bottom:1px solid var(--border-strong);white-space:nowrap}
+.runs td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+.runs td.t{white-space:nowrap;font-variant-numeric:tabular-nums}
+.src{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:4px;background:var(--surface-2);color:var(--text-2)}
+.res{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid}
+.res.sent{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-border)}
+.res.prev{color:var(--text-2);background:var(--surface-2);border-color:var(--border)}
+.res.fail{color:var(--risk);background:var(--risk-bg);border-color:var(--risk-border)}
+.runs .err{color:var(--risk);max-width:420px}
+.runs .cnt .r{color:var(--risk);font-weight:700}
+.runs .cnt .m{color:var(--mis);font-weight:700}
+.runs .hk{font-family:var(--mono);font-size:12px}
+
+/* ===== 확인 창 ===== */
+dialog{border:1px solid var(--border-strong);border-radius:12px;padding:0;background:var(--surface);color:var(--text);box-shadow:var(--shadow);width:min(420px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(10,12,16,.45)}
+.dlg{padding:20px}
+.dlg h3{margin:0 0 6px;font-size:16px}
+.dlg p{margin:0 0 4px;color:var(--text-2);font-size:13px}
+.dlg .row{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+/* ===== 모바일 ===== */
+@media (max-width:820px){
+  .topbar-in,.wrap{padding-left:16px;padding-right:16px}
+  .summary{grid-template-columns:1fr}
+  .hint{display:none}
+  .tablebox{max-height:none;overflow:visible;background:none;border:0}
+  table.grid{min-width:0}
+  .grid thead{display:none}
+  .grid,.grid tbody,.grid tr,.grid td{display:block;width:auto}
+  .grid tbody tr{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;padding:10px 12px;border-left:4px solid var(--stripe,var(--border))}
+  .grid td{border:0;padding:3px 0;min-width:0}
+  .grid td:first-child{box-shadow:none}
+  .grid td[data-l]::before{content:attr(data-l);display:inline-block;width:72px;font-size:12px;color:var(--text-3);font-weight:600}
+  .grid td.c-title,.grid td.c-reason,.grid td.c-verdict{padding-top:6px}
+  .grid td.c-title::before,.grid td.c-reason::before,.grid td.c-verdict::before{display:none}
+  .badges{flex-direction:row}
+  tr.grp{padding:8px 12px !important}
+  tr.grp td{background:none}
+  .tablebox.runs-box{overflow:auto;background:var(--surface);border:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar"><div class="topbar-in">
+  <div class="brand">GPU Live 에이전트</div>
+  <nav class="tabs"><a class="tab" id="tab-today" href="/">오늘</a><a class="tab" id="tab-runs" href="/runs">실행 기록</a></nav>
+</div></header>
+
+<main class="wrap" id="page-today">
+  <div class="head">
+    <div>
+      <h1 id="title"></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="actions">
+      <form method="post" action="/action/preview" id="f-preview">
+        <button class="btn" type="submit" id="b-preview"><span class="spin"></span>미리보기 <small>Jira 새로 읽기 · 발송 안 함</small></button>
+      </form>
+      <form method="post" action="/action/send" id="f-send">
+        <button class="btn primary" type="submit" id="b-send"><span class="spin"></span>지금 Teams 로 발송</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="notices"></div>
+  <div id="summary"></div>
+  <div id="diff"></div>
+
+  <div class="toolbar" id="toolbar">
+    <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">Epic 별로 묶기</button></div>
+    <input class="search" id="q" type="search" placeholder="키 · 제목 · 이유 · 담당 검색">
+    <span class="count" id="count"></span>
+    <button class="linkbtn" id="reset" hidden>필터 모두 해제</button>
+    <span class="hint">머리글을 누르면 정렬, 아래 칸으로 필터</span>
+  </div>
+
+  <div class="tablebox"><table class="grid" id="grid">
+    <thead><tr class="hrow" id="hrow"></tr><tr class="frow" id="frow"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+  <div class="foot" id="foot"></div>
+
+  <details class="raw"><summary>Teams 로 보낸 본문</summary><pre id="raw"></pre></details>
+</main>
+
+<main class="wrap" id="page-runs" hidden>
+  <div class="head"><div><h1>실행 기록</h1></div></div>
+  <p class="runs-intro">자동(평일 09:00)·웹·수동 실행이 전부 남습니다. 웹훅 <b>202</b> 는 Teams 가 받았다는 뜻이고, 채팅 게시 여부는 Power Automate 실행 기록에서 확인합니다.</p>
+  <div class="tablebox runs-box"><table class="runs">
+    <thead><tr><th>시각</th><th>출처</th><th>결과</th><th>건수</th><th>웹훅</th><th>오류</th></tr></thead>
+    <tbody id="runs-body"></tbody>
+  </table></div>
+</main>
+
+<div class="pop" id="pop"><div class="pop-list" id="pop-list"></div>
+  <div class="pop-foot"><button class="linkbtn" id="pop-clear">필터 해제</button><button class="linkbtn" id="pop-close">닫기</button></div></div>
+
+<dialog id="dlg"><form method="dialog" class="dlg">
+  <h3>지금 Teams 로 발송할까요?</h3>
+  <p>Jira 를 새로 읽은 뒤 결과를 Teams 로 보냅니다.</p>
+  <p id="dlg-sum"></p>
+  <div class="row"><button class="btn" value="cancel">취소</button><button class="btn primary" value="ok">발송</button></div>
+</form></dialog>
+
+<script>
+/* ===== 데이터 — 서버(web/server.py)가 아래 자리에 JSON 을 넣는다 ===== */
+const DATA = /*__DATA__*/null;
+const MOCK = false;
+const PAGE = DATA.page;             // today | runs | run
+const REPORT = DATA.report;         // 결과가 없으면 null
+const RUNS = DATA.runs || [];
+
+/* ===== 공통 ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const VCLS = {"위험":"risk","불일치":"mis","정상":"ok"};
+const VRANK = {"위험":0,"불일치":1,"정상":2};
+const COMP_RANK = {"Delayed":0,"On Time":1,"Early":2,"Not Evaluated":3};
+const keyNum = k => parseInt(String(k).replace(/\D/g,""),10)||0;
+const vrank = r => r.verdict.includes("위험") ? (r.verdict.includes("불일치") ? 0 : 1) : r.verdict.includes("불일치") ? 2 : 3;
+const isIssue = r => !r.verdict.includes("정상");
+
+/* 열 정의: 순서 고정 (판정 · 상위 · 키 · 제목 · 유형 · 상태 · 담당 · 기한 · 일정 준수 · 이유) */
+const COLS = [
+  {id:"verdict",  label:"판정",       cls:"c-verdict",  f:"set",  vals:r=>r.verdict, sort:(a,b)=>vrank(a)-vrank(b)||keyNum(a.key)-keyNum(b.key)},
+  {id:"parent",   label:"상위 (Epic)", cls:"c-parent",   f:"set",  vals:r=>[r.parent]},
+  {id:"key",      label:"키",         cls:"c-key",      f:"text", text:r=>r.key, sort:(a,b)=>keyNum(a.key)-keyNum(b.key)},
+  {id:"title",    label:"제목",       cls:"c-title",    f:"text", text:r=>r.title},
+  {id:"kind",     label:"유형",       cls:"c-kind",     f:"set",  vals:r=>[r.kind]},
+  {id:"status",   label:"상태",       cls:"c-status",   f:"set",  vals:r=>[r.status]},
+  {id:"assignee", label:"담당",       cls:"c-assignee", f:"set",  vals:r=>[r.assignee||"없음"]},
+  {id:"due",      label:"기한",       cls:"c-due",      f:null,   text:r=>r.due},
+  {id:"compliance",label:"일정 준수", cls:"c-comp",     f:"set",  vals:r=>[r.compliance], sort:(a,b)=>(COMP_RANK[a.compliance]??9)-(COMP_RANK[b.compliance]??9)},
+  {id:"reason",   label:"이유",       cls:"c-reason",   f:"text", text:r=>r.risk.concat(r.mismatch).join(" ") || "정상"}
+];
+
+const state = {sort:{col:"verdict",dir:1}, sets:{}, texts:{}, group:"flat", q:"", closed:new Set()};
+
+/* ===== 셀 렌더 ===== */
+function cell(c, r){
+  switch(c.id){
+    case "verdict": return `<div class="badges">${r.verdict.map(v=>`<span class="badge ${VCLS[v]}">${v}</span>`).join("")}</div>`;
+    case "parent": return esc(r.parent);
+    case "key": return `${r.new?"🆕 ":""}<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.key)}</a>`;
+    case "title": return esc(r.title);
+    case "kind": { const m = r.kind.match(/^(.+?)(\(.+\))$/); return m ? `${esc(m[1])}<span class="kind-sub">${esc(m[2])}</span>` : esc(r.kind); }
+    case "status": return `<span class="st ${r.status==="종료"?"done":""}">${esc(r.status)}</span>`;
+    case "assignee": return r.assignee ? esc(r.assignee) : '<span class="none">없음</span>';
+    case "due": return esc(r.due);
+    case "compliance": return `<span class="${r.compliance==="Delayed"?"comp-delayed":""}">${esc(r.compliance)}</span>`;
+    case "reason": {
+      const li = r.risk.map(t=>`<li class="r">${esc(t)}</li>`).concat(r.mismatch.map(t=>`<li class="m">${esc(t)}</li>`));
+      return `<ul class="reasons">${li.length ? li.join("") : '<li class="o">정상</li>'}</ul>`;
+    }
+  }
+}
+function rowClass(r){ return r.verdict.includes("위험") ? "v-risk" : r.verdict.includes("불일치") ? "v-mis" : "v-ok"; }
+
+/* ===== 머리글 / 필터 줄 ===== */
+function renderHead(){
+  $("#hrow").innerHTML = COLS.map(c=>{
+    const s = state.sort.col===c.id ? `<span class="arr">${state.sort.dir>0?"▲":"▼"}</span>` : "";
+    return `<th class="${c.cls}" data-col="${c.id}">${c.label}${s}</th>`;
+  }).join("");
+  $("#frow").innerHTML = COLS.map(c=>{
+    if(c.f==="set"){
+      const sel = state.sets[c.id]; const on = sel && sel.size;
+      return `<th class="${c.cls}"><button class="fbtn${on?" on":""}" data-f="${c.id}"><span>${on ? (sel.size===1 ? esc([...sel][0]) : sel.size+"개 선택") : "(전체)"}</span><span>▾</span></button></th>`;
+    }
+    if(c.f==="text"){
+      const v = state.texts[c.id]||"";
+      return `<th class="${c.cls}"><input class="finp${v?" on":""}" data-t="${c.id}" value="${esc(v)}" placeholder="포함…"></th>`;
+    }
+    return `<th class="${c.cls}"></th>`;
+  }).join("");
+}
+
+/* ===== 본문 ===== */
+function visibleRows(){
+  const q = state.q.trim().toLowerCase();
+  return REPORT.rows.filter(r=>{
+    for(const c of COLS){
+      const sel = state.sets[c.id];
+      if(sel && sel.size && !c.vals(r).some(v=>sel.has(v))) return false;
+      const t = (state.texts[c.id]||"").trim().toLowerCase();
+      if(t && !c.text(r).toLowerCase().includes(t)) return false;
+    }
+    if(q){
+      const hay = [r.key,r.title,r.parent,r.assignee,r.kind,...r.risk,...r.mismatch].join(" ").toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+function sorted(rows){
+  const c = COLS.find(x=>x.id===state.sort.col);
+  const cmp = c.sort || ((a,b)=>{ const x=(c.text?c.text(a):c.vals(a).join()), y=(c.text?c.text(b):c.vals(b).join()); return x.localeCompare(y,"ko"); });
+  return rows.slice().sort((a,b)=>state.sort.dir*cmp(a,b) || vrank(a)-vrank(b) || keyNum(a.key)-keyNum(b.key));
+}
+function trHtml(r){
+  return `<tr class="${rowClass(r)}">${COLS.map(c=>`<td class="${c.cls}" data-l="${c.label}">${cell(c,r)}</td>`).join("")}</tr>`;
+}
+function renderBody(){
+  const rows = sorted(visibleRows());
+  let html = "";
+  if(!rows.length){
+    html = `<tr class="empty-row"><td colspan="${COLS.length}">조건에 맞는 이슈가 없습니다.</td></tr>`;
+  } else if(state.group==="epic"){
+    const groups = new Map();
+    rows.forEach(r=>{ if(!groups.has(r.parent)) groups.set(r.parent,[]); groups.get(r.parent).push(r); });
+    const order = [...groups.entries()].sort((a,b)=>Math.min(...a[1].map(vrank))-Math.min(...b[1].map(vrank)) || a[0].localeCompare(b[0],"ko"));
+    for(const [name,list] of order){
+      const nr = list.filter(r=>r.verdict.includes("위험")).length, nm = list.filter(r=>r.verdict.includes("불일치")).length, no = list.filter(r=>r.verdict.includes("정상")).length;
+      const closed = state.closed.has(name);
+      html += `<tr class="grp${closed?" closed":""}" data-g="${esc(name)}"><td colspan="${COLS.length}"><div class="grp-in"><span class="grp-car">▾</span><span class="grp-tag">EPIC</span><span class="grp-name">${esc(name)}</span><span class="grp-cnt">${list.length}건${nr?` · <span class="r">위험 ${nr}</span>`:""}${nm?` · <span class="m">불일치 ${nm}</span>`:""}${no?` · 정상 ${no}`:""}</span></div></td></tr>`;
+      if(!closed) html += list.map(trHtml).join("");
+    }
+  } else html = rows.map(trHtml).join("");
+  $("#tbody").innerHTML = html;
+  $("#count").innerHTML = `<b>${rows.length}</b> / ${REPORT.rows.length}건`;
+  const anyF = Object.values(state.sets).some(s=>s&&s.size) || Object.values(state.texts).some(Boolean) || state.q;
+  $("#reset").hidden = !anyF;
+}
+function render(){ renderHead(); renderBody(); }
+
+/* ===== 이벤트 ===== */
+$("#hrow").addEventListener("click", e=>{
+  const th = e.target.closest("th[data-col]"); if(!th) return;
+  const id = th.dataset.col;
+  state.sort = state.sort.col===id ? {col:id,dir:-state.sort.dir} : {col:id,dir:1};
+  render();
+});
+$("#frow").addEventListener("input", e=>{
+  const t = e.target.dataset.t; if(!t) return;
+  state.texts[t] = e.target.value; e.target.classList.toggle("on", !!e.target.value); renderBody();
+});
+$("#frow").addEventListener("click", e=>{
+  const b = e.target.closest(".fbtn"); if(!b) return;
+  e.stopPropagation(); openPop(b.dataset.f, b);
+});
+$("#tbody").addEventListener("click", e=>{
+  const g = e.target.closest("tr.grp"); if(!g) return;
+  const n = g.dataset.g; state.closed.has(n) ? state.closed.delete(n) : state.closed.add(n); renderBody();
+});
+$("#q").addEventListener("input", e=>{ state.q = e.target.value; renderBody(); });
+$("#reset").addEventListener("click", ()=>{ state.sets={}; state.texts={}; state.q=""; $("#q").value=""; render(); });
+$("#seg-group").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  state.group = b.dataset.v; [...$("#seg-group").children].forEach(x=>x.classList.toggle("on", x===b)); renderBody();
+});
+
+/* ===== 필터 팝업 (체크박스 다중 선택) ===== */
+let popCol = null;
+function openPop(colId, anchor){
+  const c = COLS.find(x=>x.id===colId); popCol = colId;
+  const counts = new Map();
+  REPORT.rows.forEach(r=>c.vals(r).forEach(v=>counts.set(v,(counts.get(v)||0)+1)));
+  let vals = [...counts.keys()];
+  vals.sort(colId==="verdict" ? (a,b)=>VRANK[a]-VRANK[b] : (a,b)=>a.localeCompare(b,"ko"));
+  const sel = state.sets[colId] || new Set();
+  const all = sel.size===0;
+  $("#pop-list").innerHTML =
+    `<label class="all"><input type="checkbox" data-all ${all?"checked":""}><span class="v">(전체)</span></label>` +
+    vals.map(v=>`<label><input type="checkbox" value="${esc(v)}" ${all||sel.has(v)?"checked":""}><span class="v">${colId==="verdict"?`<span class="badge ${VCLS[v]}">${v}</span>`:esc(v)}</span><span class="c">${counts.get(v)}</span></label>`).join("");
+  const pop = $("#pop"), rc = anchor.getBoundingClientRect();
+  pop.classList.add("open");
+  const left = Math.min(rc.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8);
+  pop.style.left = Math.max(8,left)+"px"; pop.style.top = (rc.bottom + window.scrollY + 4)+"px";
+}
+$("#pop-list").addEventListener("change", e=>{
+  const boxes = [...$("#pop-list").querySelectorAll("input:not([data-all])")];
+  if(e.target.dataset.all !== undefined) boxes.forEach(b=>b.checked = e.target.checked);
+  const checked = boxes.filter(b=>b.checked).map(b=>b.value);
+  $("#pop-list").querySelector("[data-all]").checked = checked.length===boxes.length;
+  // 전부 체크 = 필터 없음. 하나도 체크 안 함 = 0건 (엑셀과 같음)
+  state.sets[popCol] = checked.length===boxes.length ? new Set() : new Set(checked.length ? checked : ["__none__"]);
+  render();
+});
+function closePop(){ $("#pop").classList.remove("open"); popCol=null; }
+$("#pop-close").addEventListener("click", closePop);
+$("#pop-clear").addEventListener("click", ()=>{ state.sets[popCol]=new Set(); render(); closePop(); });
+document.addEventListener("click", e=>{ if(!e.target.closest("#pop")) closePop(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closePop(); });
+
+/* ===== 버튼: 미리보기 / 발송 ===== */
+function setBusy(btn){
+  document.querySelectorAll(".actions .btn").forEach(b=>b.disabled=true);
+  btn.classList.add("busy");
+  btn.lastChild.textContent = btn.id==="b-send" ? "발송 중…" : "실행 중…";
+  $("#notices").innerHTML = `<div class="notice run"><span class="spin"></span><span class="grow">Jira 를 새로 읽는 중입니다. 수십 초 걸릴 수 있습니다 — 창을 닫지 마세요.</span></div>`;
+}
+$("#f-preview").addEventListener("submit", e=>{ setBusy($("#b-preview")); if(MOCK) e.preventDefault(); });
+$("#f-send").addEventListener("submit", e=>{
+  e.preventDefault();
+  const dlg = $("#dlg");
+  $("#dlg-sum").textContent = `현재 화면 기준: 위험 ${REPORT.counts["위험"]} · 불일치 ${REPORT.counts["불일치"]} (발송 시점에 다시 계산됩니다)`;
+  const go = ()=>{ setBusy($("#b-send")); if(!MOCK) e.target.submit(); };
+  if(typeof dlg.showModal!=="function"){ if(confirm("지금 Teams 로 발송할까요?")) go(); return; }
+  dlg.returnValue=""; dlg.showModal();
+  dlg.addEventListener("close", ()=>{ if(dlg.returnValue==="ok") go(); }, {once:true});
+});
+
+/* ===== 상단 요약 ===== */
+function renderTop(){
+  const c = REPORT.counts, nIssue = c["위험"]+c["불일치"];
+  const [left] = REPORT.title.split(" — ");
+  $("#title").innerHTML = `${esc(left)} <span class="sep">—</span> ${nIssue ? `<span style="color:var(--risk)">위험 ${c["위험"]}</span> · <span style="color:var(--mis)">불일치 ${c["불일치"]}</span>` : `<span style="color:var(--ok)">이상 없음 (${c["전체"]}건)</span>`}`;
+  const outcome = REPORT.outcome==="발송" ? `발송 <span class="hook">웹훅 HTTP ${REPORT.webhook}</span>` : esc(REPORT.outcome);
+  $("#meta").innerHTML = [esc(REPORT.at), esc(REPORT.trigger), outcome].join('<span class="dot"></span>');
+
+  if(nIssue){
+    $("#summary").innerHTML = `<div class="summary">
+      <section class="fix"><div class="fix-title">오늘 고칠 것 — ${nIssue}건</div>
+        <div class="fix-nums">
+          <button class="kpi risk${c["위험"]?"":" zero"}" data-v="위험"><div class="n">${c["위험"]}</div><div class="l">위험 · 입력 누락</div></button>
+          <button class="kpi mis${c["불일치"]?"":" zero"}" data-v="불일치"><div class="n">${c["불일치"]}</div><div class="l">불일치 · 값 틀림</div></button>
+        </div></section>
+      <section class="side">
+        <div class="mini ok"><div class="l">정상</div><div class="n">${c["정상"]}</div></div>
+        <div class="mini"><div class="l">전체</div><div class="n">${c["전체"]}</div><div class="sub">${esc(c["상태별"])}</div></div>
+      </section></div>`;
+  } else {
+    $("#summary").innerHTML = `<div class="allclear"><div class="big">✅</div><div class="grow"><h2>지금 고칠 이슈가 없습니다</h2><p>${c["전체"]}건 모두 정상 · ${esc(c["상태별"])}</p></div></div>`;
+  }
+  $("#summary").querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{ state.sets.verdict=new Set([k.dataset.v]); render(); });
+
+  $("#foot").textContent = REPORT.skipped ? `제외: ${REPORT.skipped}` : "";
+  $("#raw").textContent = DATA.text || teamsText();
+}
+function teamsText(){
+  const c = REPORT.counts, L = [REPORT.title, `${REPORT.at} · ${REPORT.trigger}`, ""];
+  REPORT.rows.filter(isIssue).sort((a,b)=>vrank(a)-vrank(b)||keyNum(a.key)-keyNum(b.key)).forEach(r=>{
+    L.push(`[${r.verdict.join("+")}] ${r.key} ${r.title} (${r.assignee||"없음"})`);
+    r.risk.concat(r.mismatch).forEach(t=>L.push(`  - ${t}`));
+  });
+  L.push("", `정상 ${c["정상"]} · 전체 ${c["전체"]} (${c["상태별"]})`, `제외: ${REPORT.skipped}`);
+  return L.join("\n");
+}
+
+/* ===== 실행 기록 ===== */
+function renderRuns(){
+  const cls = {"발송":"sent","미리보기":"prev","수집 실패":"fail","발송 실패":"fail"};
+  $("#runs-body").innerHTML = RUNS.map(r=>`<tr>
+    <td class="t"><a href="/run/${esc(r.id)}">${esc(r.at)}</a></td>
+    <td><span class="src">${esc(r.src)}</span></td>
+    <td><span class="res ${cls[r.res]||"prev"}">${esc(r.res)}</span></td>
+    <td class="cnt">${r.r==null ? '<span class="none">-</span>' : `<span class="r">위험 ${r.r}</span> · <span class="m">불일치 ${r.m}</span>`}</td>
+    <td class="hk">${r.hook}</td>
+    <td class="err">${esc(r.err)}</td></tr>`).join("");
+}
+
+/* ===== 페이지 선택 ===== */
+function renderNotice(){
+  const n = DATA.notice; if(!n) return;
+  const cls = n.kind==="ok" ? "ok" : "err";
+  $("#notices").innerHTML = `<div class="notice ${cls}"><b>${esc(n.head)}</b><span class="grow">${esc(n.body)}</span>${n.link?`<a href="${esc(n.link)}">실행 기록 보기</a>`:""}</div>`;
+}
+function renderDiff(){
+  const d = DATA.diff; if(!d || !d.base) return;
+  const join = a => a.length ? a.map(esc).join(", ") : "없음";
+  $("#diff").innerHTML = `<div class="diffline"><span>이전 리포트(${esc(d.base)}) 대비</span>`
+    + `<span class="new">새로 걸림: ${join(d.new)}</span><span class="gone">해결: ${join(d.resolved)}</span></div>`;
+}
+if(PAGE==="runs"){
+  $("#page-today").hidden = true; $("#page-runs").hidden = false; $("#tab-runs").classList.add("on"); renderRuns();
+} else {
+  if(PAGE==="today") $("#tab-today").classList.add("on");
+  if(!REPORT){
+    $("#title").textContent = DATA.empty_title || "아직 결과가 없습니다";
+    $("#meta").textContent = DATA.empty_meta || "미리보기를 눌러 Jira 를 읽으세요.";
+    ["#toolbar",".tablebox","#foot","details.raw"].forEach(q=>{ const el=$(q); if(el) el.hidden=true; });
+    renderNotice();
+  } else {
+    renderTop(); render(); renderNotice(); renderDiff();
+  }
+}
+</script>
+</body>
+</html>
