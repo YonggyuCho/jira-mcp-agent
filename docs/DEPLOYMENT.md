@@ -362,13 +362,14 @@ UNIT
 sudo systemctl enable --now gpu-live-web
 # 2) 인증서 (HTTP-01 — 80 포트가 밖에서 열려 있어야 한다). 갱신은 certbot.timer 가 한다.
 sudo certbot --nginx -d <도메인> --non-interactive --agree-tos --register-unsafely-without-email --redirect
-# 3) 로그인
+# 3) (선택) 로그인 — 보안 그룹으로 통제한다면 생략
 sudo htpasswd -c -B /etc/nginx/.htpasswd-gpulive <아이디>
 ```
 
-nginx 의 443 server 블록에 `auth_basic` 과 `proxy_pass http://127.0.0.1:8090;` 를 넣는다.
+nginx 의 443 server 블록에 `proxy_pass http://127.0.0.1:8090;` 를 넣는다 (로그인을 쓰면 `auth_basic` 도).
+**앱에는 로그인이 없다.** 로그인도 보안 그룹 제한도 없이 열면 누구나 발송 버튼을 누를 수 있다 — 둘 중 하나는 반드시 건다.
 `proxy_read_timeout` 은 300초 이상 — "지금 발송" 은 Jira 조회와 웹훅까지 기다린다.
 `.env` 에 `AGENT_WEB_URL` 을 넣으면 Teams 리포트 끝에 링크가 붙는다.
 
-**주의 — curl 로 확인할 때 `-w %{redirect_url}` 을 쓰지 않는다.** `-u 아이디:비번` 과 함께 쓰면
+**주의 — (로그인을 쓸 때) curl 로 확인할 때 `-w %{redirect_url}` 을 쓰지 않는다.** `-u 아이디:비번` 과 함께 쓰면
 리다이렉트 주소에 비밀번호가 붙어 출력된다. 실제로 이렇게 비밀번호가 노출돼 교체했다.
