@@ -369,7 +369,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
             <label class="pill" data-m="close"><input type="radio" name="cmode" value="close">종료까지 <small>(끝난 작업 기록)</small></label></div></div>
           <div class="fld full"><label class="lb" for="c-title">제목<span class="req">*</span></label><input type="text" id="c-title" placeholder="예: GPU Live TIPA B300 노드 2대 증설"></div>
           <div class="fld"><label class="lb" for="c-assignee">담당자<span class="req">*</span></label><select id="c-assignee"></select></div>
-          <div class="fld"><label class="lb" for="c-route">요청 경로<span class="req">*</span></label><select id="c-route"></select></div>
+          <div class="fld"><label class="lb" for="c-cat">이슈 분류<span class="req">*</span><span class="hintx" id="c-cat-hint"></span></label><select id="c-cat"></select></div>
           <div class="fld"><label class="lb">시작/Actual Start<span class="req">*</span><span class="hintx">시작 날짜 · Actual start 에 같이 들어감</span></label><div class="two"><input type="date" id="c-start"><input type="time" id="c-time" value="09:00"></div></div>
           <div class="fld"><label class="lb" for="c-due">기한<span class="req">*</span></label><input type="date" id="c-due"></div>
           <div class="fld only-close"><label class="lb">Actual End<span class="req">*</span></label><div class="two"><input type="date" id="c-end"><input type="time" id="c-etime" value="18:00"></div></div>
@@ -661,7 +661,7 @@ function renderCreate(){
   $("#c-epic").textContent = M.epic_title ? `· Epic: ${M.epic_title}` : "";
   $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `보고자 = ${esc(M.me.name)} (등록하는 계정)`].join('<span class="dot"></span>');
   const today = new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
-  const st = {parent:M.parents[0]?.key, type:null, mode:"close", eng:new Set(M.default_engineers), cc:new Set(), touched:false, compAuto:true};
+  const st = {parent:M.parents[0]?.key, type:null, mode:"close", catAuto:true, eng:new Set(M.default_engineers), cc:new Set(), touched:false, compAuto:true};
   const P = () => M.parents.find(p=>p.key===st.parent) || {};
   const name = id => (M.people.find(x=>x.id===id)||{}).name || id;
 
@@ -673,7 +673,7 @@ function renderCreate(){
   // 담당자 / 요청 경로
   $("#c-assignee").innerHTML = `<option value="">— 선택 —</option>` + M.people.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join("");
   $("#c-assignee").value = M.me.id || "";
-  $("#c-route").innerHTML = M.options.route.map(v=>`<option>${esc(v)}</option>`).join("");
+  $("#c-cat").innerHTML = (M.options.category||[]).map(v=>`<option>${esc(v)}</option>`).join("");
   $("#c-start").value = today; $("#c-due").value = today; $("#c-end").value = today;
   $("#c-comp").innerHTML = (M.options.compliance||["Early","On Time","Delayed"]).filter(v=>v!=="Not Evaluated").map(v=>`<option>${esc(v)}</option>`).join("");
   $("#c-delay").innerHTML = `<option value="">— 선택 —</option>` + (M.options.delay||[]).map(v=>`<option>${esc(v)}</option>`).join("");
@@ -692,10 +692,10 @@ function renderCreate(){
   function pickParent(k){
     st.parent = k; const p = P();
     document.querySelectorAll(".pcard").forEach(b=>b.classList.toggle("on", b.dataset.k===k));
-    setType(p.default_type); $("#c-route").value = p.route || "고객"; update();
+    setType(p.default_type); update();
   }
   function setType(t){
-    st.type = t;
+    st.type = t; st.catAuto = true;  // 상위·유형이 바뀌면 이슈 분류는 다시 기본값으로
     document.querySelectorAll("#c-type .pill").forEach(l=>{ const on=l.dataset.t===t; l.classList.toggle("on",on); l.querySelector("input").checked=on; });
     renderPeople(); update();
   }
@@ -705,10 +705,12 @@ function renderCreate(){
     $("#c-eng-label").innerHTML = (isMeeting() ? "참조" : "엔지니어") + '<span class="req">*</span>' + (isMeeting() ? '<span class="hintx">회의는 엔지니어 대신 참조에 참석자를 적는다</span>' : '');
     $("#c-eng").innerHTML = M.people.map(u=>`<label class="pill${set.has(u.id)?" on":""}" data-u="${esc(u.id)}"><input type="checkbox" ${set.has(u.id)?"checked":""}>${esc(u.name)}</label>`).join("");
   }
-  function category(){
+  // 규칙 기본값: 프로젝트 바로 아래(회의 제외) = 솔루션 제품 개선, 그 외 = 고객요청. 사람이 바꿀 수 있다.
+  function categoryDefault(){
     const p = P();
     return (p.kind===M.category.project_kind && !isMeeting()) ? M.category.project_child : M.category.default;
   }
+  function category(){ return $("#c-cat").value || categoryDefault(); }
   function adf(text){
     const paras = text.split(/\n/).map(l=>l.trim()?{type:"paragraph",content:[{type:"text",text:l}]}:{type:"paragraph"});
     return {type:"doc",version:1,content:paras};
@@ -740,7 +742,7 @@ function renderCreate(){
       [F.actual_start]: dt($("#c-start").value, $("#c-time").value),
       description: adf($("#c-desc").value),
       [F.solution]:[{value:M.fixed.solution}], [F.support]:{value:M.fixed.support},
-      [F.route]:{value:$("#c-route").value}, [F.customer]: p.customer ? [p.customer] : [],
+      [F.route]:{value:M.fixed.route}, [F.customer]: p.customer ? [p.customer] : [],
       [F.region]: p.region ? [{value:p.region}] : [], [F.category]:{value:category()},
       priority:{name:M.fixed.priority},
     };
@@ -763,11 +765,14 @@ function renderCreate(){
       if(sug && c!==sug) out.push(["warn",`일정 준수를 '${c}' 로 골랐습니다 — Actual End·기한으로는 '${sug}'`]);
       if(c==="Delayed" && !$("#c-delay").value) out.push(["bad","Delayed 이면 지연 사유를 고르세요 (비우면 리포트에 '지연 사유: 미기재')"]);
     }
+    if(category()!==categoryDefault()) out.push(["warn",`이슈 분류를 '${category()}' 로 바꿨습니다 — 기본값 '${categoryDefault()}' 와 달라 매일 리포트에서 불일치로 잡힙니다`]);
     if(!out.length) out.push(["ok","필수 항목이 모두 채워졌습니다 — 매일 리포트의 미기입 규칙에 걸리지 않습니다"]);
     return out;
   }
   function update(){
     if(st.compAuto){ const sug=suggestComp(); if(sug) $("#c-comp").value = sug; }
+    if(st.catAuto) $("#c-cat").value = categoryDefault();
+    $("#c-cat-hint").textContent = `기본값: ${categoryDefault()}`;
     $("#c-comp-hint").textContent = suggestComp() ? `Actual End·기한 기준 추천: ${suggestComp()}` : "";
     document.querySelectorAll(".only-delayed").forEach(el=>el.hidden = !(st.mode==="close" && $("#c-comp").value==="Delayed"));
     const c = checks();
@@ -775,9 +780,9 @@ function renderCreate(){
     const p = P();
     const rows = [["Jira 프로젝트",M.project],["Epic",M.epic_title||"-"],["프로젝트(상위)",p.title||"-"],["솔루션",M.fixed.solution],["엔지니어 지원 방법",M.fixed.support],
       ["고객사명(통합키)",p.customer||"-"],["권역",p.region||"-"],["우선순위",M.fixed.priority],
-      ["이슈 분류",category()+'<span class="auto">자동</span>'],["일정 준수 여부", st.mode==="close" ? "입력값 (4단계에서 넣음)" : "Not Evaluated (Jira 기본값)"],
+      ["요청 경로",M.fixed.route],["일정 준수 여부", st.mode==="close" ? "입력값 (4단계에서 넣음)" : "Not Evaluated (Jira 기본값)"],
       ["최종 상태", {open:"미해결", progress:"진행 중", close:"종료"}[st.mode]],["보고자",esc(M.me.name)]];
-    $("#c-fixed").innerHTML = rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${k==="이슈 분류"?v:esc(v)}</dd>`).join("");
+    $("#c-fixed").innerHTML = rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
     $("#c-payload").textContent = steps().map(x=>`// ${x.step}. ${x.what}\n${x.method} ${x.path}\n${JSON.stringify(x.body, null, 2)}`).join("\n\n");
   }
 
@@ -785,14 +790,15 @@ function renderCreate(){
   $("#c-type").addEventListener("change", e=>setType(e.target.value));
   $("#c-mode").addEventListener("change", e=>setMode(e.target.value));
   $("#c-comp").addEventListener("change", ()=>{ st.compAuto=false; update(); });
+  $("#c-cat").addEventListener("change", ()=>{ st.catAuto = $("#c-cat").value===categoryDefault(); update(); });
   ["#c-end","#c-etime","#c-delay"].forEach(id=>$(id).addEventListener("input", update));
   $("#c-eng").addEventListener("change", e=>{
     const l = e.target.closest(".pill"); const set = isMeeting() ? st.cc : st.eng;
     e.target.checked ? set.add(l.dataset.u) : set.delete(l.dataset.u); l.classList.toggle("on", e.target.checked); update();
   });
-  ["#c-title","#c-assignee","#c-route","#c-start","#c-time","#c-due","#c-desc"].forEach(id=>$(id).addEventListener("input", update));
+  ["#c-title","#c-assignee","#c-start","#c-time","#c-due","#c-desc"].forEach(id=>$(id).addEventListener("input", update));
   $("#c-reset").onclick = ()=>{ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); $("#c-start").value=today; $("#c-due").value=today; $("#c-time").value="09:00";
-    st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; st.compAuto=true; $("#c-end").value=today; $("#c-etime").value="18:00"; $("#c-delay").value="";
+    st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; st.compAuto=true; st.catAuto=true; $("#c-end").value=today; $("#c-etime").value="18:00"; $("#c-delay").value="";
     $("#c-notices").innerHTML=""; pickParent(M.parents[0]?.key); setMode("close"); };
   $("#c-copy").onclick = ()=>{ navigator.clipboard && navigator.clipboard.writeText($("#c-payload").textContent); $("#c-copy").textContent="복사됨"; setTimeout(()=>$("#c-copy").textContent="JSON 복사",1200); };
   $("#c-submit").onclick = ()=>{

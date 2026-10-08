@@ -98,7 +98,7 @@ def _build() -> dict:
             meta = c.get(f"/issue/createmeta/{project}/issuetypes/{type_ids['기술지원']}",
                          params={"maxResults": 100})
             for fm in meta.get("fields") or meta.get("values") or []:
-                if fm["fieldId"] in (F["route"], F["region"], F["delay"], F["compliance"]):
+                if fm["fieldId"] in (F["route"], F["region"], F["delay"], F["compliance"], F["category"]):
                     options[fm["fieldId"]] = [a.get("value") for a in fm.get("allowedValues") or []]
 
         work = [r for r in rows if r["fields"]["issuetype"]["name"] not in PARENT_TYPES]
@@ -131,6 +131,7 @@ def _build() -> dict:
         fixed = {
             "solution": solution,
             "support": collect.EXPECT_SUPPORT,
+            "route": "고객",  # 요청 경로는 '고객' 고정 (사용자 요구 R41)
             "priority": Counter(_v(r["fields"].get("priority")) for r in rows).most_common(1)[0][0] if rows else None,
         }
         return {
@@ -140,7 +141,8 @@ def _build() -> dict:
             "default_engineers": list(combo[0][0]) if combo else [],
             "me": {"id": me.get("accountId"), "name": me.get("displayName")},
             "fixed": fixed, "options": {"route": options.get(F["route"], []), "region": options.get(F["region"], []),
-                                         "delay": options.get(F["delay"], []), "compliance": options.get(F["compliance"], [])},
+                                         "delay": options.get(F["delay"], []), "compliance": options.get(F["compliance"], []),
+                                         "category": options.get(F["category"], [])},
             "transitions": TRANSITIONS,
             "category": {"project_child": collect.PROJECT_CHILD_CATEGORY, "default": collect.EXPECT_CATEGORY,
                          "meeting_kind": collect.MEETING_KIND, "project_kind": collect.PROJECT_KIND},
