@@ -13,7 +13,7 @@
   --risk:#C4262E; --risk-bg:#FDECEC; --risk-border:#F3C1C3;
   --mis:#B4530A; --mis-bg:#FEF0E3; --mis-border:#F5CDA5;
   --ok:#1E7B39; --ok-bg:#E7F4EB; --ok-border:#B5DDC1;
-  --epic:#6B3FC4; --epic-bg:rgba(107,63,196,.07);
+  --epic:#6B3FC4; --epic-bg:rgba(107,63,196,.07); --project:#1B5E20;
   --row-hover:#F7F8FA; --shadow:0 8px 24px rgba(20,24,31,.12);
   --font:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -27,7 +27,7 @@
     --risk:#FF7C82; --risk-bg:#3A1B1E; --risk-border:#6A2C31;
     --mis:#FFAD5E; --mis-bg:#38250F; --mis-border:#6A4520;
     --ok:#5DD08B; --ok-bg:#14301F; --ok-border:#23523A;
-    --epic:#B59CFF; --epic-bg:rgba(181,156,255,.09);
+    --epic:#B59CFF; --epic-bg:rgba(181,156,255,.09); --project:#66BB6A;
     --row-hover:#1A1F26; --shadow:0 8px 24px rgba(0,0,0,.5);
     color-scheme:dark;
   }
@@ -132,8 +132,9 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1460px
 .grid thead tr.hrow th:hover{color:var(--text)}
 .grid thead tr.hrow th .arr{color:var(--accent);margin-left:2px}
 .grid thead tr.frow th{top:31px;padding-top:2px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)}
-/* 계층 2단: Epic 열은 보라 글씨(배경 없음), 프로젝트 열은 보통 글씨 (사용자 요구) */
+/* 계층 2단: Epic 열은 보라 글씨, 프로젝트 열은 짙은 초록 글씨 — 배경 없음 (사용자 요구) */
 .grid th.c-epic,.grid td.c-epic{color:var(--epic) !important}
+.grid th.c-project,.grid td.c-project{color:var(--project) !important}
 .fbtn{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:12px;color:var(--text-3);text-align:left;padding:0 6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:4px;white-space:nowrap}
 .fbtn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);font-weight:700}
 .finp{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:12px;padding:0 6px}
