@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 
-from jira_mcp import client, config
+from jira_mcp import adf, client, config
 
 # 대상은 .env 로 정한다 (AGENT_PROJECT / AGENT_SOLUTION). 코드에 조직 값을 박지 않는다.
 # 솔루션 필드로 고르고 담당자로 좁히지 않는다 — 솔루션 전체 현황을 보는 것이 목적이다.
@@ -21,6 +21,7 @@ CHILD_JQL = 'project = {project} AND parent in ({keys}) ORDER BY key ASC'
 
 FIELDS = [
     "summary", "status", "assignee", "reporter", "issuetype", "duedate", "parent",
+    "description",        # 설명. ADF(중첩 JSON)라 평문으로 펴서 비었는지 본다
     "customfield_10008",  # Actual start
     "customfield_10009",  # Actual end
     "customfield_10015",  # 시작 날짜
@@ -62,6 +63,7 @@ class Issue:
     reporter: str | None = None
     engineer: str | None = None
     cc: str | None = None
+    has_description: bool = True
     start_date: str | None = None
     support: str | None = None
     category: str | None = None
@@ -170,6 +172,8 @@ def _issue(raw: dict, site: str) -> Issue:
         reporter=_val(f.get("reporter")),
         engineer=_val(f.get("customfield_12414")),
         cc=_val(f.get("customfield_12427")),
+        # 공백·줄바꿈만 있는 설명도 '내용 없음' 으로 본다.
+        has_description=bool(adf.flatten(f.get("description")).strip()) if f.get("description") else False,
         start_date=_val(f.get("customfield_10015")),
         support=_val(f.get("customfield_12428")),
         category=_val(f.get("customfield_12530")),
@@ -237,6 +241,7 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
             ("Actual end", i.actual_end if i.is_done else "-"),
             ("솔루션", i.solution), ("엔지니어 지원 방법", i.support),
             ("이슈 분류", i.category if not i.is_parent else "-"), ("기한", i.duedate),
+            ("설명", i.has_description),
         ) if not got]
         if empty:
             found.append(Finding(i, "미기입: " + ", ".join(empty), 2))
