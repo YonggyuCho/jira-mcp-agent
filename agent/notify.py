@@ -85,7 +85,7 @@ def _resolve(fmt: str, url: str) -> str:
 
 
 def send(url: str, fmt: str, title: str, text: str,
-         bot: str = "Jira Agent", timeout: float = 15.0) -> None:
+         bot: str = "Jira Agent", timeout: float = 15.0) -> int:
     if not url:
         raise NotifyError("AGENT_WEBHOOK_URL 이 비어 있습니다.")
     fmt = _resolve(fmt, url)
@@ -102,3 +102,4 @@ def send(url: str, fmt: str, title: str, text: str,
         raise NotifyError(f"웹훅 거부 HTTP {r.status_code}: {r.text[:200]}{hint}")
     # Workflows 훅은 수락 시 202 를 준다. 본문이 비어 있어도 정상이다.
     log.info("웹훅 응답 HTTP %s", r.status_code)
+    return r.status_code

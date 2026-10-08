@@ -1,6 +1,8 @@
 """Report 를 사람이 읽는 텍스트로. LLM 이 죽어도 이건 항상 나온다."""
 from __future__ import annotations
 
+import os
+
 from .collect import MISMATCH, RISK, Report
 
 SEVERITY_MARK = {0: "🔴", 1: "🔴", 2: "🟡", 3: "🟠"}
@@ -71,6 +73,9 @@ def body(report: Report) -> str:
 
     if report.skipped:
         out += ["", "제외: " + ", ".join(f"{k} {v}건" for k, v in report.skipped.items())]
+
+    if web := os.environ.get("AGENT_WEB_URL", "").strip():
+        out += ["", f"웹에서 보기: {web}"]
 
     return "\n".join(out)
 

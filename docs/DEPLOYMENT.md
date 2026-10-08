@@ -330,3 +330,45 @@ tail -50 /var/log/gpu-live.log
 - `WARNING ... 요약을 건너뜁니다` — 리포트는 정상 발송됐고 요약만 빠졌다. 급하지 않다.
 - `ERROR 수집 실패` — **발송되지 않았다.** Jira 토큰 만료나 네트워크를 본다.
 - `ERROR 발송 실패` — 취합은 됐고 웹훅이 거부했다. URL 과 포맷을 본다.
+
+---
+
+## 웹 화면 (선택)
+
+에이전트 결과를 브라우저로 보고, 버튼으로 미리보기·발송을 한다. `web/server.py` — 표준 라이브러리만 쓴다.
+
+```
+cron / 웹 버튼 ─▶ python -m agent.daily ─▶ runs/<날짜>/<시각>-<출처>.json ─▶ Teams
+                                                   │
+브라우저 ─ HTTPS ─▶ nginx (로그인) ─▶ 127.0.0.1:8090 web.server ─ 읽어서 표시
+```
+
+- **판정은 웹이 하지 않는다.** 버튼은 cron 과 같은 명령을 실행한다. 미리보기는 `AGENT_DRY_RUN=1` 을 강제한다.
+- **`runs/` 는 공개 저장소에 올리지 않는다** (이슈 키·담당자 이름). `.gitignore` 에 있다.
+- 앱은 `127.0.0.1` 에만 묶는다. HTTPS 와 로그인은 nginx 가 맡는다. 버튼(POST)은 같은 출처만 받는다.
+
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx apache2-utils
+# 1) 서비스
+sudo tee /etc/systemd/system/gpu-live-web.service <<'UNIT'
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/jira-mcp
+ExecStart=/opt/jira-mcp/.venv/bin/python -m web.server
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl enable --now gpu-live-web
+# 2) 인증서 (HTTP-01 — 80 포트가 밖에서 열려 있어야 한다). 갱신은 certbot.timer 가 한다.
+sudo certbot --nginx -d <도메인> --non-interactive --agree-tos --register-unsafely-without-email --redirect
+# 3) 로그인
+sudo htpasswd -c -B /etc/nginx/.htpasswd-gpulive <아이디>
+```
+
+nginx 의 443 server 블록에 `auth_basic` 과 `proxy_pass http://127.0.0.1:8090;` 를 넣는다.
+`proxy_read_timeout` 은 300초 이상 — "지금 발송" 은 Jira 조회와 웹훅까지 기다린다.
+`.env` 에 `AGENT_WEB_URL` 을 넣으면 Teams 리포트 끝에 링크가 붙는다.
+
+**주의 — curl 로 확인할 때 `-w %{redirect_url}` 을 쓰지 않는다.** `-u 아이디:비번` 과 함께 쓰면
+리다이렉트 주소에 비밀번호가 붙어 출력된다. 실제로 이렇게 비밀번호가 노출돼 교체했다.
