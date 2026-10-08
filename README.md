@@ -141,3 +141,7 @@ python -m agent.daily --no-llm   # 요약 없이 표만
 `JIRA_ALLOW_WRITE` 스위치 + 프로젝트 화이트리스트를 앞에 두기로 함.
 토큰 범위에 `write:jira-work` 추가 필요.
 붙이기 전에 프롬프트 인젝션 대비를 읽는다 — [CLAUDE.md](CLAUDE.md) 6장.
+
+## 웹 화면
+
+에이전트 결과를 브라우저로 보고 미리보기·발송을 누르는 화면이 `web/` 에 있다. → `docs/WEB.md`

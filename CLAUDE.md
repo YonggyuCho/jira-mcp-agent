@@ -8,6 +8,7 @@
 |---|---|---|---|
 | `jira_mcp/` | Claude Code 가 붙는 MCP 서버 (stdio) | 개발자 PC | `requirements.txt` |
 | `agent/` | 매일 1회 도는 취합 에이전트 (cron) | 클라우드 서버 | `requirements-agent.txt` |
+| `web/` | 에이전트 결과를 보는 웹 화면 (nginx 뒤, 127.0.0.1) | 클라우드 서버 | 없음 (표준 라이브러리) |
 
 공통은 `jira_mcp/client.py` + `config.py` (Jira REST 래퍼), `requirements-core.txt`.
 **에이전트는 MCP 프로토콜을 쓰지 않는다** — `jira_mcp.client` 를 직접 import 한다.
@@ -117,6 +118,8 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 .venv/Scripts/python.exe smoke_test.py
 | 본문 변환이 이상할 때 | `jira_mcp/adf.py` |
 | 인증 실패 | `check_auth.py` → `jira_mcp/config.py` |
 | 기본 검색 범위 | `server.py` 의 `DEFAULT_BOUND` |
+| 에이전트 판정 규칙 | `agent/collect.py` 의 `_judge()` — 규칙 원본은 `docs/internal/GPU-LIVE-AUDIT.md` 8장 |
+| 웹 화면 | `web/server.py` — 고치면 `sudo systemctl restart gpu-live-web`. `docs/WEB.md` |
 
 `CUSTOM_FIELDS` / `COLUMNS` / `JQL_ALIASES` 셋은 **같이 움직인다.**
 필드를 새로 쓰기 시작하면 세 곳을 함께 본다.
@@ -147,7 +150,8 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 .venv/Scripts/python.exe smoke_test.py
 | `docs/JIRA-FIELDS.md` | 커스텀 필드 ID 표, 필드 찾는 법, JQL 함정 |
 | `docs/internal/GPU-LIVE-AUDIT.md` | 감사 정의와 질의 (저장소에 없음) |
 | `docs/internal/WORKING-RULES.md` | **사용자의 상시 요구사항.** 작업 전에 읽는다 (저장소에 없음) |
-| `docs/DEPLOYMENT.md` | 로컬 stdio → 원격 HTTP 이전 절차 |
+| `docs/DEPLOYMENT.md` | 로컬 stdio → 원격 HTTP 이전 절차, 에이전트·웹 배포 |
+| `docs/WEB.md` | 웹 화면 — 구조, 화면, 운영, 깨면 안 되는 것 |
 | `README.md` | 설치·설정·등록 |
 
 ---
