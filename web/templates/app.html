@@ -521,7 +521,8 @@ function renderTop(){
   const outcome = REPORT.outcome==="발송" ? `발송 <span class="hook">웹훅 HTTP ${REPORT.webhook}</span>` : esc(REPORT.outcome);
   $("#meta").innerHTML = [esc(REPORT.at), esc(REPORT.trigger), outcome].join('<span class="dot"></span>');
 
-  if(nIssue){
+  // 이상 없는 날도 같은 카드로 '위험 0 · 불일치 0' 을 보여 준다 (사용자 요구 — 따로 안내 화면을 쓰지 않는다).
+  {
     $("#summary").innerHTML = `<div class="summary">
       <section class="fix"><div class="fix-title">오늘 고칠 것 — ${nIssue}건</div>
         <div class="fix-nums">
@@ -532,8 +533,6 @@ function renderTop(){
         <div class="mini ok"><div class="l">정상</div><div class="n">${c["정상"]}</div></div>
         <div class="mini"><div class="l">전체</div><div class="n">${c["전체"]}</div><div class="sub">${esc(c["상태별"])}</div></div>
       </section></div>`;
-  } else {
-    $("#summary").innerHTML = `<div class="allclear"><div class="big">✅</div><div class="grow"><h2>지금 고칠 이슈가 없습니다</h2><p>${c["전체"]}건 모두 정상 · ${esc(c["상태별"])}</p></div></div>`;
   }
   $("#summary").querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{ state.sets.verdict=new Set([k.dataset.v]); render(); });
 
