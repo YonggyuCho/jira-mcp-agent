@@ -163,3 +163,170 @@ def form_meta(refresh: bool = False) -> dict:
             return {"ok": False, "error": str(exc)[:300]}
         _cache.update(at=time.time(), data=data)
         return data
+
+
+# ── 검증 (dry-run) ─────────────────────────────────────────────────────────
+# Jira 에는 '등록 미리 시험' API 가 없다. 그래서 읽기 API 로 실제 등록 때 실패할 지점을 하나씩 확인한다.
+# 아무것도 쓰지 않는다.
+
+def _sample(c, project: str, type_id: str, cat: str) -> str | None:
+    """같은 유형에서 상태 범주가 cat(new / indeterminate / done)인 이슈 하나."""
+    names = {"new": "To Do", "indeterminate": "In Progress", "done": "Done"}
+    r = c.post("/search/jql", json={"jql": f'project = {project} AND issuetype = {type_id} '
+                                            f'AND statusCategory = "{names[cat]}" ORDER BY updated DESC',
+                                     "maxResults": 1, "fields": ["status"]})
+    iss = r.get("issues") or []
+    return iss[0]["key"] if iss else None
+
+
+def validate(steps: list[dict]) -> list[dict]:
+    """steps = 화면이 만든 단계별 요청. 결과: [{stage, level(ok/warn/bad), msg}]"""
+    out: list[dict] = []
+    add = lambda stage, level, msg: out.append({"stage": stage, "level": level, "msg": msg})  # noqa: E731
+    meta = form_meta()
+    if not meta.get("ok"):
+        return [{"stage": "준비", "level": "bad", "msg": f"양식 데이터를 못 읽었습니다: {meta.get('error')}"}]
+    cfg = config.load()
+    c = client.JiraClient(cfg)
+    try:
+        create = next((s for s in steps if s.get("step") == 1), None)
+        if not create:
+            return [{"stage": "준비", "level": "bad", "msg": "1단계(등록) 요청이 없습니다"}]
+        fields = (create.get("body") or {}).get("fields") or {}
+        type_id = str((fields.get("issuetype") or {}).get("id") or "")
+        project = (fields.get("project") or {}).get("key") or meta["project"]
+
+        # ── 1. 등록 화면 ────────────────────────────────────────────────
+        cm = c.get(f"/issue/createmeta/{project}/issuetypes/{type_id}", params={"maxResults": 200})
+        screen = {f["fieldId"]: f for f in (cm.get("fields") or cm.get("values") or [])}
+        names = {k: v.get("name", k) for k, v in screen.items()}
+        unknown = [k for k in fields if k not in screen]
+        if unknown:
+            add("1. 등록", "bad", f"등록 화면에 없는 필드: {', '.join(unknown)} — Jira 가 거부한다")
+        missing = [names[k] for k, f in screen.items()
+                   if f.get("required") and not f.get("hasDefaultValue") and k not in ("project", "issuetype")
+                   and fields.get(k) in (None, "", [], {})]
+        add("1. 등록", "bad" if missing else "ok",
+            f"필수 필드 비어 있음: {', '.join(missing)}" if missing else f"필수 필드 {sum(1 for f in screen.values() if f.get('required'))}개 모두 채움")
+        bad_opts = []
+        for k, v in fields.items():
+            allowed = [a.get("value") or a.get("name") for a in (screen.get(k, {}).get("allowedValues") or [])]
+            if not allowed or k in ("issuetype", "project"):
+                continue
+            vals = [x.get("value") or x.get("name") for x in (v if isinstance(v, list) else [v]) if isinstance(x, dict)]
+            bad_opts += [f"{names.get(k, k)}='{x}'" for x in vals if x not in allowed]
+        add("1. 등록", "bad" if bad_opts else "ok",
+            f"허용되지 않는 선택값: {', '.join(bad_opts)}" if bad_opts else "선택값이 모두 허용 목록 안에 있음")
+
+        # 사람: 배정 가능한지
+        people = []
+        if (fields.get("assignee") or {}).get("accountId"):
+            people.append(("담당자", fields["assignee"]["accountId"]))
+        for fk, label in ((F["engineer"], "엔지니어"), (F["cc"], "참조")):
+            people += [(label, u.get("accountId")) for u in fields.get(fk) or [] if u.get("accountId")]
+        name = {p["id"]: p["name"] for p in meta["people"]}
+        for label, aid in people:
+            try:
+                found = c.get("/user/assignable/search", params={"project": project, "accountId": aid})
+                ok = any(u.get("accountId") == aid and u.get("active", True) for u in (found or []))
+            except client.JiraError:
+                ok = False
+            add("1. 등록", "ok" if ok else "bad",
+                f"{label} {name.get(aid, aid)}: " + ("이 프로젝트에 배정 가능" if ok else "배정 불가 또는 비활성 계정"))
+
+        # 상위
+        pk = (fields.get("parent") or {}).get("key")
+        if pk:
+            try:
+                pf = c.get(f"/issue/{pk}", params={"fields": "issuetype,status,project"})["fields"]
+                if pf["issuetype"].get("subtask"):
+                    add("1. 등록", "bad", f"상위 {pk} 가 하위 유형이라 그 아래에 만들 수 없음")
+                elif pf["project"]["key"] != project:
+                    add("1. 등록", "bad", f"상위 {pk} 가 다른 프로젝트")
+                else:
+                    add("1. 등록", "ok", f"상위 {pk} ({pf['issuetype']['name']}, {pf['status']['name']}) 확인")
+            except client.JiraError:
+                add("1. 등록", "bad", f"상위 {pk} 를 찾을 수 없음")
+
+        # ── 2·3. 전환 ───────────────────────────────────────────────────
+        for s in steps:
+            tid = ((s.get("body") or {}).get("transition") or {}).get("id")
+            if not tid:
+                continue
+            cat = "new" if tid == TRANSITIONS["start"] else "indeterminate"
+            key = _sample(c, project, type_id, cat)
+            if not key:
+                add(f"{s['step']}. 전환", "warn", f"같은 유형의 표본 이슈가 없어 전환 {tid} 를 확인하지 못함")
+                continue
+            tr = c.get(f"/issue/{key}/transitions", params={"expand": "transitions.fields"}).get("transitions", [])
+            hit = next((t for t in tr if t["id"] == tid), None)
+            if not hit:
+                add(f"{s['step']}. 전환", "bad", f"전환 id {tid} 가 없음 (표본 {key} 기준) — 워크플로가 바뀌었을 수 있음")
+                continue
+            req = [v.get("name") for v in (hit.get("fields") or {}).values() if v.get("required")]
+            add(f"{s['step']}. 전환", "bad" if req else "ok",
+                f"'{hit['name']}' → {hit['to']['name']}" + (f" — 전환 때 필수 입력: {', '.join(req)}" if req else " (묻는 필드 없음, 표본 " + key + ")"))
+
+        # ── 4. 값 다시 넣기 (수정 화면) ─────────────────────────────────
+        put = next((s for s in steps if s.get("method") == "PUT"), None)
+        if put:
+            final = "done" if any(((s.get("body") or {}).get("transition") or {}).get("id") == TRANSITIONS["close"]
+                                  for s in steps) else "indeterminate"
+            key = _sample(c, project, type_id, final)
+            if not key:
+                add(f"{put['step']}. 수정", "warn", "같은 상태의 표본 이슈가 없어 수정 가능 여부를 확인하지 못함")
+            else:
+                em = c.get(f"/issue/{key}/editmeta").get("fields", {})
+                want = list(((put.get("body") or {}).get("fields") or {}).keys())
+                miss = [names.get(k, k) for k in want if k not in em]
+                add(f"{put['step']}. 수정", "bad" if miss else "ok",
+                    f"{'종료' if final == 'done' else '진행 중'} 상태에서 수정 못 하는 필드: {', '.join(miss)} (표본 {key})"
+                    if miss else f"{'종료' if final == 'done' else '진행 중'} 상태에서도 {len(want)}개 필드 수정 가능 (표본 {key})")
+                for k, v in ((put.get("body") or {}).get("fields") or {}).items():
+                    allowed = [a.get("value") for a in (em.get(k, {}).get("allowedValues") or [])]
+                    if allowed and isinstance(v, dict) and v.get("value") not in allowed:
+                        add(f"{put['step']}. 수정", "bad", f"{names.get(k, k)}='{v.get('value')}' 허용 안 됨")
+
+        # ── 리포트 미리 판정 ─────────────────────────────────────────────
+        merged = dict(fields)
+        if put:
+            merged.update((put.get("body") or {}).get("fields") or {})
+        closed = any(((s.get("body") or {}).get("transition") or {}).get("id") == TRANSITIONS["close"] for s in steps)
+        moved = any(((s.get("body") or {}).get("transition") or {}).get("id") for s in steps)
+        tname = next((n for n, i in meta["types"].items() if i == type_id), "")
+        desc = merged.get("description") or {}
+        text = " ".join(t.get("text", "") for p in desc.get("content", []) for t in p.get("content", []) or [])
+        issue = collect.Issue(
+            key="(새 이슈)", summary=merged.get("summary") or "", kind=tname,
+            status="종료" if closed else ("진행 중" if moved else "미해결"),
+            assignee=name.get((merged.get("assignee") or {}).get("accountId")) if merged.get("assignee") else None,
+            duedate=collect._date(merged.get("duedate")), actual_start=merged.get(F["actual_start"]),
+            actual_end=merged.get(F["actual_end"]) if closed else None,
+            compliance=(merged.get(F["compliance"]) or {}).get("value") or "Not Evaluated",
+            delay_reason=(merged.get(F["delay"]) or {}).get("value"),
+            reporter=meta["me"]["name"], engineer=", ".join(name.get(u.get("accountId"), "?") for u in merged.get(F["engineer"]) or []) or None,
+            cc=", ".join(name.get(u.get("accountId"), "?") for u in merged.get(F["cc"]) or []) or None,
+            start_date=merged.get(F["start_date"]), support=(merged.get(F["support"]) or {}).get("value"),
+            category=(merged.get(F["category"]) or {}).get("value"),
+            solution=", ".join(x.get("value", "") for x in merged.get(F["solution"]) or []) or None,
+            parent=pk, has_description=bool(text.strip()),
+        )
+        project_parents = {p["key"] for p in meta["parents"] if p["kind"] == collect.PROJECT_KIND}
+        skipped: dict[str, int] = {}
+        found = collect._judge([issue], dt_today(), 3, project_parents, skipped)
+        if found:
+            for f in found:
+                add("리포트 미리 판정", "warn", f"내일 리포트에 {'위험으로' if f.category == collect.RISK else '불일치로'} 잡힘: {f.reason}")
+        else:
+            note = " (진행 중 Not Evaluated 는 제외 규칙 대상)" if skipped else ""
+            add("리포트 미리 판정", "ok", f"등록 후 상태 '{issue.status}' 기준, 매일 리포트에 걸리지 않음{note}")
+        return out
+    except client.JiraError as exc:
+        return out + [{"stage": "Jira", "level": "bad", "msg": f"Jira 조회 실패: {str(exc)[:200]}"}]
+    finally:
+        c.close()
+
+
+def dt_today():
+    import datetime as _dt
+    return _dt.date.today()

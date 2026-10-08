@@ -198,6 +198,15 @@ class Handler(BaseHTTPRequestHandler):
         if not host or urlparse(origin).netloc != host:
             return self._send(403, "출처가 다른 요청입니다.".encode(), "text/plain; charset=utf-8")
         path = urlparse(self.path).path
+        if path == "/action/validate":
+            # Jira 등록 검증 (dry-run) — 읽기 API 로만 확인한다. 아무것도 쓰지 않는다.
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                steps = json.loads(self.rfile.read(min(n, 200_000)) or b"{}").get("steps") or []
+                result = jira_form.validate(steps)
+            except (ValueError, AttributeError) as exc:
+                result = [{"stage": "요청", "level": "bad", "msg": f"요청을 읽지 못했습니다: {exc}"}]
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
         if path not in ("/action/preview", "/action/send"):
             return self._send(404, b"", "text/plain")
         ok, tail = _run_agent(send=path.endswith("send"))
