@@ -94,7 +94,8 @@ button{font:inherit;color:inherit}
 .cards{margin-top:20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .cards .kpi{min-height:88px}
 .kpi.okc{background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok)}
-.kpi.total{background:var(--surface);border-color:var(--border);color:var(--text);cursor:default}
+.kpi.total{background:var(--surface);border-color:var(--border);color:var(--text)}
+.kpi.sel{outline:2px solid currentColor;outline-offset:2px}
 .kpi.total .sub{font-weight:400;color:var(--text-3);font-size:12px;margin-left:4px}
 .side{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 20px;display:flex;flex-direction:column;gap:10px}
 .side .mini+.mini{border-top:1px solid var(--border);padding-top:12px}
@@ -442,7 +443,11 @@ function renderBody(){
   const anyF = Object.values(state.sets).some(s=>s&&s.size) || Object.values(state.texts).some(Boolean) || state.q;
   $("#reset").hidden = !anyF;
 }
-function render(){ renderHead(); renderBody(); }
+function markCards(){
+  const sel = state.sets.verdict, one = sel && sel.size===1 ? [...sel][0] : (sel && sel.size ? null : "");
+  document.querySelectorAll("#summary .kpi").forEach(k=>k.classList.toggle("sel", one!==null && k.dataset.v===one));
+}
+function render(){ renderHead(); renderBody(); markCards(); }
 
 /* ===== 이벤트 ===== */
 $("#hrow").addEventListener("click", e=>{
@@ -535,9 +540,12 @@ function renderTop(){
     <button class="kpi risk${c["위험"]?"":" zero"}" data-v="위험"><div class="n">${c["위험"]}</div><div class="l">위험 · 입력 누락</div></button>
     <button class="kpi mis${c["불일치"]?"":" zero"}" data-v="불일치"><div class="n">${c["불일치"]}</div><div class="l">불일치 · 값 틀림</div></button>
     <button class="kpi okc" data-v="정상"><div class="n">${c["정상"]}</div><div class="l">정상</div></button>
-    <div class="kpi total"><div class="n">${c["전체"]}</div><div class="l">전체 <span class="sub">${esc(c["상태별"])}</span></div></div>
+    <button class="kpi total" data-v=""><div class="n">${c["전체"]}</div><div class="l">전체 <span class="sub">${esc(c["상태별"])}</span></div></button>
   </div>`;
-  $("#summary").querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{ state.sets.verdict=new Set([k.dataset.v]); render(); });
+  // 카드 = 판정 필터. '전체' 카드는 판정 필터를 푼다.
+  $("#summary").querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{
+    state.sets.verdict = k.dataset.v ? new Set([k.dataset.v]) : new Set(); render();
+  });
 
   $("#foot").textContent = REPORT.skipped ? `제외: ${REPORT.skipped}` : "";
   $("#raw").textContent = DATA.text || teamsText();
