@@ -91,6 +91,11 @@ button{font:inherit;color:inherit}
 .kpi.mis{background:var(--mis-bg);border-color:var(--mis-border);color:var(--mis)}
 .kpi.zero{opacity:.55}
 .kpi:hover{filter:brightness(.98)}
+.cards{margin-top:20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.cards .kpi{min-height:88px}
+.kpi.okc{background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok)}
+.kpi.total{background:var(--surface);border-color:var(--border);color:var(--text);cursor:default}
+.kpi.total .sub{font-weight:400;color:var(--text-3);font-size:12px;margin-left:4px}
 .side{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 20px;display:flex;flex-direction:column;gap:10px}
 .side .mini+.mini{border-top:1px solid var(--border);padding-top:12px}
 .mini .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -234,6 +239,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 @media (max-width:820px){
   .topbar-in,.wrap{padding-left:16px;padding-right:16px}
   .summary{grid-template-columns:1fr}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hint{display:none}
   .tablebox{max-height:none;overflow:visible;background:none;border:0}
   table.grid{min-width:0}
@@ -522,18 +528,13 @@ function renderTop(){
   $("#meta").innerHTML = [esc(REPORT.at), esc(REPORT.trigger), outcome].join('<span class="dot"></span>');
 
   // 이상 없는 날도 같은 카드로 '위험 0 · 불일치 0' 을 보여 준다 (사용자 요구 — 따로 안내 화면을 쓰지 않는다).
-  {
-    $("#summary").innerHTML = `<div class="summary">
-      <section class="fix"><div class="fix-title">오늘 고칠 것 — ${nIssue}건</div>
-        <div class="fix-nums">
-          <button class="kpi risk${c["위험"]?"":" zero"}" data-v="위험"><div class="n">${c["위험"]}</div><div class="l">위험 · 입력 누락</div></button>
-          <button class="kpi mis${c["불일치"]?"":" zero"}" data-v="불일치"><div class="n">${c["불일치"]}</div><div class="l">불일치 · 값 틀림</div></button>
-        </div></section>
-      <section class="side">
-        <div class="mini ok"><div class="l">정상</div><div class="n">${c["정상"]}</div></div>
-        <div class="mini"><div class="l">전체</div><div class="n">${c["전체"]}</div><div class="sub">${esc(c["상태별"])}</div></div>
-      </section></div>`;
-  }
+  // 카드 4개를 같은 너비로 (사용자 요구). '오늘 고칠 것 — N건' 제목은 쓰지 않는다.
+  $("#summary").innerHTML = `<div class="cards">
+    <button class="kpi risk${c["위험"]?"":" zero"}" data-v="위험"><div class="n">${c["위험"]}</div><div class="l">위험 · 입력 누락</div></button>
+    <button class="kpi mis${c["불일치"]?"":" zero"}" data-v="불일치"><div class="n">${c["불일치"]}</div><div class="l">불일치 · 값 틀림</div></button>
+    <button class="kpi okc" data-v="정상"><div class="n">${c["정상"]}</div><div class="l">정상</div></button>
+    <div class="kpi total"><div class="n">${c["전체"]}</div><div class="l">전체 <span class="sub">${esc(c["상태별"])}</span></div></div>
+  </div>`;
   $("#summary").querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{ state.sets.verdict=new Set([k.dataset.v]); render(); });
 
   $("#foot").textContent = REPORT.skipped ? `제외: ${REPORT.skipped}` : "";
