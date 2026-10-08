@@ -22,6 +22,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from agent import store
 
+from . import jira_form
+
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "app.html"
 HOST = os.environ.get("WEB_HOST", "127.0.0.1")
@@ -170,6 +172,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             msg = (parse_qs(url.query).get("msg") or [""])[0][:300]
             return self._send(200, render(today_data(msg)))
+        if path == "/create":
+            # Jira 등록 (데모) — 양식은 Jira 실측값으로 만든다. 실제 등록은 하지 않는다.
+            refresh = (parse_qs(url.query).get("refresh") or [""])[0] == "1"
+            return self._send(200, render({"page": "create", "report": None, "runs": [],
+                                           "form": jira_form.form_meta(refresh=refresh)}))
         if path == "/runs":
             return self._send(200, render({"page": "runs", "report": None, "runs": _runs_list(store.load_all())}))
         if path.startswith("/run/"):

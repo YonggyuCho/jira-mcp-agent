@@ -82,7 +82,9 @@ text ~ "솔루션"            →  그대로                      (값 자리 �
 | 참조 | `customfield_12427` — 동명·유사 4개(참조자 10170·12707, 참조(CC) 11857) 중 회의 유형에서 실제로 쓰이는 것 |
 | 시작 날짜 | `customfield_10015` — `시작일`(10193, 12569)과 다른 필드 |
 | 이슈 분류 | `customfield_12530` — 선택. 값 예: `고객요청`(띄어쓰기 없음), `솔루션 제품 결함`, `솔루션 제품 개선` |
-| 권역 | `customfield_12472` |
+| 권역 | `customfield_12472` — 다중선택 `[{"value":"서울"}]` |
+| 요청 경로 | `customfield_12480` — 선택 `{"value":"고객"}` |
+| 고객사명(통합키) | `customfield_12487` — 문자열 배열 `["고객사A"]` (선택지 없음, 레이블처럼) |
 | 연락 담당자 | `customfield_12477` |
 | 접속 정보 | `customfield_12479` |
 | 순위 | `customfield_10019` |
@@ -142,3 +144,12 @@ Windows 에서는 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` 을 붙여 실행한다.
   `startAt` 을 보내면 `HTTP 400 Invalid request payload` 가 난다.
 - 응답에 `total` 이 없다. 전체 건수를 알려면 끝까지 넘겨야 한다.
 - 제약 없는 JQL(`order by ...` 만)은 거부된다. `server.py` 가 `updated >= -90d` 를 씌운다.
+
+---
+
+## 6. 이슈 만들 때 (createmeta)
+
+`GET /issue/createmeta/<프로젝트>/issuetypes` → 유형 목록, `…/issuetypes/<id>` → 그 유형의 필드·필수 여부·선택지.
+읽기 범위 토큰으로도 조회된다. 같은 이름의 유형이 둘일 수 있다(이 사이트의 '회의' 는 일반·하위 두 개) — `subtask` 값으로 구분한다.
+하위 유형(하위 작업·기술지원·회의)은 `parent` 가 필수다.
+사용자 필드는 `{"accountId": ...}` 로 보낸다. 날짜시간은 `2026-10-08T09:00:00.000+0900`, 설명은 ADF.
