@@ -242,6 +242,11 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
             found.append(Finding(i, "미기입: " + ", ".join(empty), 2))
 
         # ── 불일치 / 오기입 ─────────────────────────────────────
+        # 시작 날짜와 Actual start 는 년월일이 같아야 한다. 시간은 보지 않는다.
+        # 둘 중 하나가 비면 건너뛴다 — 빈 칸은 위에서 미기입으로 잡힌다.
+        start, actual = _date(i.start_date), _date(i.actual_start)
+        if start and actual and start != actual:
+            found.append(Finding(i, f"시작 날짜 {start} ≠ Actual start {actual}", 3, MISMATCH))
         if i.support and i.support != EXPECT_SUPPORT:
             found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
         if i.category:
