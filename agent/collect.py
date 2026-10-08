@@ -224,7 +224,9 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
             found.append(Finding(i, f"기한 임박 — {when} ({i.duedate})", 2))
 
         empty = [name for name, got in (
-            ("보고자", i.reporter), ("담당자", i.assignee), ("엔지니어", i.engineer),
+            ("보고자", i.reporter), ("담당자", i.assignee),
+            # 회의(스프린트 회의 등)는 엔지니어가 없는 게 정상이다.
+            ("엔지니어", i.engineer if i.kind != MEETING_KIND else "-"),
             # 상위 이슈(프로젝트·구축)는 시작 날짜·이슈 분류를 안 채우는 게 정상이다.
             ("시작 날짜", i.start_date if not i.is_parent else "-"),
             ("Actual start", i.actual_start),
