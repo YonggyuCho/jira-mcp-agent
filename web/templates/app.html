@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GPU Live 에이전트</title>
+<title>GPU Live JIRA 에이전트</title>
 <style>
 /* ===== 색 토큰 ===== */
 :root{
@@ -125,16 +125,15 @@ button{font:inherit;color:inherit}
 
 /* ===== 표 ===== */
 .tablebox{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:calc(100vh - 140px)}
-table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1340px}
+table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1460px}
 .grid th,.grid td{text-align:left;vertical-align:top;padding:10px 10px;border-bottom:1px solid var(--border)}
 .grid thead th{position:sticky;z-index:3;background:var(--surface-2)}
 .grid thead tr.hrow th{top:0;font-size:12px;font-weight:700;color:var(--text-2);cursor:pointer;user-select:none;white-space:nowrap;border-bottom:0;padding-bottom:4px}
 .grid thead tr.hrow th:hover{color:var(--text)}
 .grid thead tr.hrow th .arr{color:var(--accent);margin-left:2px}
 .grid thead tr.frow th{top:31px;padding-top:2px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)}
-/* 상위 (Epic) 열: 배경 없이 머리글·칸 모두 보라 글씨 (사용자 요구, 10-08 최종) */
-.grid th.c-parent{color:var(--epic) !important}
-.grid td.c-parent{color:var(--epic)}
+/* 계층 2단: Epic 열은 보라 글씨(배경 없음), 프로젝트 열은 보통 글씨 (사용자 요구) */
+.grid th.c-epic,.grid td.c-epic{color:var(--epic) !important}
 .fbtn{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:12px;color:var(--text-3);text-align:left;padding:0 6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:4px;white-space:nowrap}
 .fbtn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);font-weight:700}
 .finp{width:100%;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:12px;padding:0 6px}
@@ -146,7 +145,8 @@ tr.v-risk{--stripe:var(--risk)} tr.v-mis{--stripe:var(--mis)} tr.v-ok{--stripe:t
 tr.v-ok td{color:var(--text-2)}
 tr.v-ok td.c-title{color:var(--text)}
 .c-verdict{width:96px}
-.c-parent{width:230px;min-width:230px;font-size:13px}
+.c-epic{width:110px;min-width:110px;font-size:13px;font-weight:600}
+.c-project{width:230px;min-width:230px;font-size:13px}
 .c-key{width:104px;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
 .c-title{min-width:240px;font-weight:700;font-size:14px;line-height:1.45}
 .c-kind{width:112px;font-size:13px}
@@ -250,7 +250,7 @@ table.runs{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
 .pill.on{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:700}
 .parents{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
 .pcard{border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--surface);text-align:left}
-.pcard .t{color:var(--epic);font-weight:700;font-size:13px}
+.pcard .t{font-weight:700;font-size:13px}
 .pcard .s{font-size:12px;color:var(--text-3)}
 .pcard.on{border-color:var(--epic);box-shadow:inset 0 0 0 1px var(--epic)}
 .fixed{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}
@@ -298,7 +298,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 <body>
 
 <header class="topbar"><div class="topbar-in">
-  <div class="brand">GPU Live 에이전트</div>
+  <div class="brand">GPU Live JIRA 에이전트</div>
   <nav class="tabs"><a class="tab" id="tab-today" href="/">오늘</a><a class="tab" id="tab-runs" href="/runs">실행 기록</a><a class="tab" id="tab-create" href="/create">Jira 등록</a></nav>
 </div></header>
 
@@ -323,7 +323,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div id="diff"></div>
 
   <div class="toolbar" id="toolbar">
-    <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">Epic 별로 묶기</button></div>
+    <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">프로젝트별로 묶기</button></div>
     <input class="search" id="q" type="search" placeholder="키 · 제목 · 이유 · 담당 검색">
     <span class="count" id="count"></span>
     <button class="linkbtn" id="reset" hidden>필터 모두 해제</button>
@@ -357,7 +357,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div id="c-notices"></div>
   <div class="cgrid" id="c-body">
     <section>
-      <div class="card"><h2>1. 상위 (Epic) 선택</h2><div class="parents" id="c-parents"></div></div>
+      <div class="card"><h2>1. 프로젝트 선택 <span id="c-epic" style="font-weight:400;color:var(--epic)"></span></h2><div class="parents" id="c-parents"></div></div>
       <div class="card" style="margin-top:16px"><h2>2. 내용 입력</h2>
         <div class="fgrid">
           <div class="fld full"><label class="lb">유형<span class="req">*</span><span class="hintx">상위가 프로젝트면 하위 작업, 구축이면 기술지원이 기본</span></label><div class="pills" id="c-type"></div></div>
@@ -408,10 +408,11 @@ const keyNum = k => parseInt(String(k).replace(/\D/g,""),10)||0;
 const vrank = r => r.verdict.includes("위험") ? (r.verdict.includes("불일치") ? 0 : 1) : r.verdict.includes("불일치") ? 2 : 3;
 const isIssue = r => !r.verdict.includes("정상");
 
-/* 열 정의: 순서 고정 (판정 · 상위 · 키 · 제목 · 유형 · 상태 · 담당 · 기한 · 일정 준수 · 이유) */
+/* 열 정의: 순서 고정 (판정 · Epic · 프로젝트 · 키 · 제목 · 유형 · 상태 · 담당 · 기한 · 일정 준수 · 이유) */
 const COLS = [
   {id:"verdict",  label:"판정",       cls:"c-verdict",  f:"set",  vals:r=>r.verdict, sort:(a,b)=>vrank(a)-vrank(b)||keyNum(a.key)-keyNum(b.key)},
-  {id:"parent",   label:"상위 (Epic)", cls:"c-parent",   f:"set",  vals:r=>[r.parent]},
+  {id:"epic",     label:"Epic",       cls:"c-epic",     f:"set",  vals:r=>[r.epic]},
+  {id:"project",  label:"프로젝트",    cls:"c-project",  f:"set",  vals:r=>[r.project]},
   {id:"key",      label:"키",         cls:"c-key",      f:"text", text:r=>r.key, sort:(a,b)=>keyNum(a.key)-keyNum(b.key)},
   {id:"title",    label:"제목",       cls:"c-title",    f:"text", text:r=>r.title},
   {id:"kind",     label:"유형",       cls:"c-kind",     f:"set",  vals:r=>[r.kind]},
@@ -428,7 +429,8 @@ const state = {sort:{col:"verdict",dir:1}, sets:{}, texts:{}, group:"flat", q:""
 function cell(c, r){
   switch(c.id){
     case "verdict": return `<div class="badges">${r.verdict.map(v=>`<span class="badge ${VCLS[v]}">${v}</span>`).join("")}</div>`;
-    case "parent": return esc(r.parent);
+    case "epic": return esc(r.epic);
+    case "project": return esc(r.project);
     case "key": return `${r.new?"🆕 ":""}<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.key)}</a>`;
     case "title": return esc(r.title);
     case "kind": { const m = r.kind.match(/^(.+?)(\(.+\))$/); return m ? `${esc(m[1])}<span class="kind-sub">${esc(m[2])}</span>` : esc(r.kind); }
@@ -474,7 +476,7 @@ function visibleRows(){
       if(t && !c.text(r).toLowerCase().includes(t)) return false;
     }
     if(q){
-      const hay = [r.key,r.title,r.parent,r.assignee,r.kind,...r.risk,...r.mismatch].join(" ").toLowerCase();
+      const hay = [r.key,r.title,r.epic,r.project,r.assignee,r.kind,...r.risk,...r.mismatch].join(" ").toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -495,12 +497,12 @@ function renderBody(){
     html = `<tr class="empty-row"><td colspan="${COLS.length}">조건에 맞는 이슈가 없습니다.</td></tr>`;
   } else if(state.group==="epic"){
     const groups = new Map();
-    rows.forEach(r=>{ if(!groups.has(r.parent)) groups.set(r.parent,[]); groups.get(r.parent).push(r); });
+    rows.forEach(r=>{ if(!groups.has(r.project)) groups.set(r.project,[]); groups.get(r.project).push(r); });
     const order = [...groups.entries()].sort((a,b)=>Math.min(...a[1].map(vrank))-Math.min(...b[1].map(vrank)) || a[0].localeCompare(b[0],"ko"));
     for(const [name,list] of order){
       const nr = list.filter(r=>r.verdict.includes("위험")).length, nm = list.filter(r=>r.verdict.includes("불일치")).length, no = list.filter(r=>r.verdict.includes("정상")).length;
       const closed = state.closed.has(name);
-      html += `<tr class="grp${closed?" closed":""}" data-g="${esc(name)}"><td colspan="${COLS.length}"><div class="grp-in"><span class="grp-car">▾</span><span class="grp-tag">EPIC</span><span class="grp-name">${esc(name)}</span><span class="grp-cnt">${list.length}건${nr?` · <span class="r">위험 ${nr}</span>`:""}${nm?` · <span class="m">불일치 ${nm}</span>`:""}${no?` · 정상 ${no}`:""}</span></div></td></tr>`;
+      html += `<tr class="grp${closed?" closed":""}" data-g="${esc(name)}"><td colspan="${COLS.length}"><div class="grp-in"><span class="grp-car">▾</span><span class="grp-tag">${esc((list[0]||{}).epic||"EPIC")}</span><span class="grp-name">${esc(name)}</span><span class="grp-cnt">${list.length}건${nr?` · <span class="r">위험 ${nr}</span>`:""}${nm?` · <span class="m">불일치 ${nm}</span>`:""}${no?` · 정상 ${no}`:""}</span></div></td></tr>`;
       if(!closed) html += list.map(trHtml).join("");
     }
   } else html = rows.map(trHtml).join("");
@@ -647,6 +649,7 @@ function renderCreate(){
     $("#c-notices").innerHTML = `<div class="notice err"><b>Jira 를 읽지 못했습니다</b><span class="grow">${esc(M.error||"")}</span></div>`;
     return;
   }
+  $("#c-epic").textContent = M.epic_title ? `· Epic: ${M.epic_title}` : "";
   $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `보고자 = ${esc(M.me.name)} (등록하는 계정)`].join('<span class="dot"></span>');
   const today = new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
   const st = {parent:M.parents[0]?.key, type:null, eng:new Set(M.default_engineers), cc:new Set(), touched:false};
@@ -720,7 +723,7 @@ function renderCreate(){
     const c = checks();
     $("#c-checks").innerHTML = c.map(([k,m])=>`<li class="${k}">${k==="ok"?"✓":k==="warn"?"!":"✕"} ${esc(m)}</li>`).join("");
     const p = P();
-    const rows = [["프로젝트",M.project],["상위",p.title||"-"],["솔루션",M.fixed.solution],["엔지니어 지원 방법",M.fixed.support],
+    const rows = [["Jira 프로젝트",M.project],["Epic",M.epic_title||"-"],["프로젝트(상위)",p.title||"-"],["솔루션",M.fixed.solution],["엔지니어 지원 방법",M.fixed.support],
       ["고객사명(통합키)",p.customer||"-"],["권역",p.region||"-"],["우선순위",M.fixed.priority],
       ["이슈 분류",category()+'<span class="auto">자동</span>'],["일정 준수 여부","Not Evaluated (Jira 기본값)"],["보고자",esc(M.me.name)]];
     $("#c-fixed").innerHTML = rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${k==="이슈 분류"?v:esc(v)}</dd>`).join("");

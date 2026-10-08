@@ -109,6 +109,7 @@ class Report:
     hygiene: list[str] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)  # 제외 규칙으로 뺀 건수. 한 줄로만 알린다
     titles: dict[str, str] = field(default_factory=dict)   # 키 → 제목. 화면의 '상위' 열에 쓴다
+    lineage: dict[str, tuple[str, str]] = field(default_factory=dict)  # 키 → (Epic 제목, 프로젝트·구축 제목)
 
     @property
     def open_issues(self) -> list[Issue]:
@@ -297,6 +298,14 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
             titles[epic] = (c.get(f"/issue/{epic}", params={"fields": "summary"})["fields"].get("summary") or "").strip()
         except client.JiraError:
             pass  # 제목 하나 때문에 리포트를 멈추지 않는다
+        # 계층: Epic → 프로젝트·구축(에픽 직속) → 실무 이슈. 이슈마다 위로 올라가 둘을 찾는다.
+        up = {r["key"]: (r["fields"].get("parent") or {}).get("key") for r in tree}
+        lineage = {}
+        for k in up:
+            top, seen = k, 0
+            while up.get(top) and up[top] != epic and seen < 10:
+                top, seen = up[top], seen + 1
+            lineage[k] = (titles.get(epic, ""), titles.get(top, ""))
         # 에픽 직속 '프로젝트' 의 하위는 이슈 분류가 제품 개선이어야 한다.
         project_parents = {r["key"] for r in tree
                           if (r["fields"].get("parent") or {}).get("key") == epic
@@ -311,6 +320,7 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
         project_parents = set()
         strays = []
         titles = {r["key"]: (r["fields"].get("summary") or "").strip() for r in rows}
+        lineage = {}
 
     issues = [_issue(r, cfg.site) for r in rows]
     skipped: dict[str, int] = {}
@@ -318,6 +328,6 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
     findings += [Finding(i, f"솔루션 '{i.solution or '공란'}' → {solution} (에픽 안, 집계 제외)",
                          3, MISMATCH) for i in strays]
     report = Report(today=today, solution=solution, issues=issues, findings=findings,
-                    hygiene=hygiene, skipped=skipped, titles=titles)
+                    hygiene=hygiene, skipped=skipped, titles=titles, lineage=lineage)
     c.close()
     return report

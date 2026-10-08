@@ -120,6 +120,7 @@ def _build() -> dict:
         combo = Counter(tuple(sorted(u["accountId"] for u in (r["fields"].get(F["engineer"]) or [])))
                         for r in work if r["fields"].get(F["engineer"])).most_common(1)
         me = c.get("/myself")
+        epic_title = (c.get(f"/issue/{epic}", params={"fields": "summary"})["fields"].get("summary") or "").strip() if epic else ""
         fixed = {
             "solution": solution,
             "support": collect.EXPECT_SUPPORT,
@@ -127,6 +128,7 @@ def _build() -> dict:
         }
         return {
             "ok": True, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "project": project, "epic": epic,
+            "epic_title": epic_title,
             "types": type_ids, "parents": parents, "people": people,
             "default_engineers": list(combo[0][0]) if combo else [],
             "me": {"id": me.get("accountId"), "name": me.get("displayName")},

@@ -50,7 +50,9 @@ def _report(run: dict, prev: dict | None) -> tuple[dict | None, dict]:
         i = r["issue"]
         verdict = [v for v, on in (("위험", r["risk"]), ("불일치", r["mismatch"])) if on] or ["정상"]
         rows.append({
-            "verdict": verdict, "parent": i.get("parent_title") or "-", "key": i["key"], "url": i["url"],
+            "verdict": verdict, "parent": i.get("parent_title") or "-",
+            # 계층 2단: Epic / 프로젝트·구축. 예전 기록(필드 없음)은 바로 위 제목을 프로젝트로 본다.
+            "epic": i.get("epic_title") or "-", "project": i.get("project_title") or i.get("parent_title") or "-", "key": i["key"], "url": i["url"],
             "title": i["summary"], "kind": i["kind"], "status": i["status"], "assignee": i.get("assignee") or "",
             "due": i.get("duedate") or "-", "compliance": i.get("compliance") or "-",
             "risk": r["risk"], "mismatch": r["mismatch"], "new": i["key"] in d["new"],

@@ -18,11 +18,13 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = Path(os.environ.get("AGENT_RUNS_DIR", ROOT / "runs"))
 
 
-def _issue(i, titles: dict[str, str]) -> dict:
+def _issue(i, titles: dict[str, str], lineage: dict | None = None) -> dict:
+    epic, project = (lineage or {}).get(i.key, ("", ""))
     return {
         "key": i.key, "summary": i.summary, "status": i.status, "kind": i.kind,
         "assignee": i.assignee, "duedate": i.duedate.isoformat() if i.duedate else None,
         "compliance": i.compliance, "parent": i.parent, "parent_title": titles.get(i.parent or "", ""),
+        "epic_title": epic, "project_title": project,
         "done": i.is_done, "url": i.url,
     }
 
@@ -31,7 +33,7 @@ def snapshot(report: Report) -> dict:
     """화면에 필요한 것만. 판정 결과(이유 포함)와 이슈 목록."""
     by_key: dict[str, dict] = {}
     for f in report.findings:
-        row = by_key.setdefault(f.issue.key, {"issue": _issue(f.issue, report.titles), "risk": [], "mismatch": [],
+        row = by_key.setdefault(f.issue.key, {"issue": _issue(f.issue, report.titles, report.lineage), "risk": [], "mismatch": [],
                                               "severity": 9, "in_scope": True})
         row["risk" if f.category == RISK else "mismatch"].append(f.reason)
         row["severity"] = min(row["severity"], f.severity)
@@ -39,7 +41,7 @@ def snapshot(report: Report) -> dict:
     for k, row in by_key.items():
         row["in_scope"] = k in keys
     for i in report.issues:
-        by_key.setdefault(i.key, {"issue": _issue(i, report.titles), "risk": [], "mismatch": [],
+        by_key.setdefault(i.key, {"issue": _issue(i, report.titles, report.lineage), "risk": [], "mismatch": [],
                                   "severity": 9, "in_scope": True})
     rows = sorted(by_key.values(), key=lambda r: int(r["issue"]["key"].rsplit("-", 1)[1]))
     return {
