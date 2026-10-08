@@ -107,6 +107,18 @@ sed -i '/^WEB_UI=/d' /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web  
 
 "등록 전 검사" 는 매일 리포트의 미기입 규칙과 같은 항목을 본다 — 이 화면으로 만든 이슈는 리포트에 안 걸리게.
 
+**등록 + 진행 중 + 종료를 한 번에 (실측 결과, 2026-10-08):** 가능하다. 단 순서가 중요하다 —
+전환이 Actual start/end 를 '지금 시각' 으로 덮어쓰므로 실제 날짜는 **마지막에** 넣는다 (`JIRA-FIELDS.md` 7장).
+
+```
+1. POST /issue                    등록 (상태 = 미해결)
+2. POST /issue/<키>/transitions   {"transition":{"id":"2"}}  작업 시작 → 진행 중  (Actual start = 지금 으로 덮임)
+3. POST /issue/<키>/transitions   {"transition":{"id":"3"}}  종결 → 종료         (Actual end = 지금 으로 덮임)
+4. PUT  /issue/<키>               Actual start / Actual end / 일정 준수 여부 를 실제 값으로
+```
+
+중간에 실패하면 이슈는 이미 만들어진 상태라, 화면에 키와 어디까지 됐는지를 보여 줘야 한다.
+
 **실제 등록을 켜려면 (다음 단계):** ① 토큰에 `write:jira-work` 범위 ② 서버에 `POST /action/create` 를 추가해
 `POST /rest/api/3/issue` 로 보낸다 (페이로드는 화면의 JSON 그대로) ③ 프로젝트·유형 화이트리스트와 확인 창
 ④ 실행 기록에 남기기. 쓰기는 되돌리기 어려우니 켜기 전에 사용자 확인.
