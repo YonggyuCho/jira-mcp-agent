@@ -25,6 +25,7 @@ FIELDS = [
     "customfield_10009",  # Actual end
     "customfield_10015",  # 시작 날짜
     "customfield_12414",  # 엔지니어 (동명 3개 중 실제로 쓰이는 것)
+    "customfield_12427",  # 참조 (동명 4개 중 회의에서 쓰이는 것). 회의는 엔지니어 대신 이걸 본다
     "customfield_12428",  # 엔지니어 지원 방법 (동명 2개 중 실제로 쓰이는 것)
     "customfield_12530",  # 이슈 분류
     "customfield_12594",  # 일정 준수 여부
@@ -60,6 +61,7 @@ class Issue:
     delay_reason: str | None
     reporter: str | None = None
     engineer: str | None = None
+    cc: str | None = None
     start_date: str | None = None
     support: str | None = None
     category: str | None = None
@@ -167,6 +169,7 @@ def _issue(raw: dict, site: str) -> Issue:
         delay_reason=_val(f.get("customfield_12604")),
         reporter=_val(f.get("reporter")),
         engineer=_val(f.get("customfield_12414")),
+        cc=_val(f.get("customfield_12427")),
         start_date=_val(f.get("customfield_10015")),
         support=_val(f.get("customfield_12428")),
         category=_val(f.get("customfield_12530")),
@@ -225,8 +228,8 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
 
         empty = [name for name, got in (
             ("보고자", i.reporter), ("담당자", i.assignee),
-            # 회의(스프린트 회의 등)는 엔지니어가 없는 게 정상이다.
-            ("엔지니어", i.engineer if i.kind != MEETING_KIND else "-"),
+            # 회의(스프린트 회의 등)는 엔지니어가 없고, 대신 참석자를 '참조' 에 적는다.
+            ("엔지니어", i.engineer) if i.kind != MEETING_KIND else ("참조", i.cc),
             # 상위 이슈(프로젝트·구축)는 시작 날짜·이슈 분류를 안 채우는 게 정상이다.
             ("시작 날짜", i.start_date if not i.is_parent else "-"),
             ("Actual start", i.actual_start),
