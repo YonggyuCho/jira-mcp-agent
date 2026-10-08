@@ -370,9 +370,9 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
           <div class="fld full"><label class="lb" for="c-title">제목<span class="req">*</span></label><input type="text" id="c-title" placeholder="예: GPU Live TIPA B300 노드 2대 증설"></div>
           <div class="fld"><label class="lb" for="c-assignee">담당자<span class="req">*</span></label><select id="c-assignee"></select></div>
           <div class="fld"><label class="lb" for="c-route">요청 경로<span class="req">*</span></label><select id="c-route"></select></div>
-          <div class="fld"><label class="lb">시작<span class="req">*</span><span class="hintx">시작 날짜 · Actual start 에 같이 들어감</span></label><div class="two"><input type="date" id="c-start"><input type="time" id="c-time" value="09:00"></div></div>
+          <div class="fld"><label class="lb">시작/Actual Start<span class="req">*</span><span class="hintx">시작 날짜 · Actual start 에 같이 들어감</span></label><div class="two"><input type="date" id="c-start"><input type="time" id="c-time" value="09:00"></div></div>
           <div class="fld"><label class="lb" for="c-due">기한<span class="req">*</span></label><input type="date" id="c-due"></div>
-          <div class="fld only-close"><label class="lb">종료 (Actual end)<span class="req">*</span></label><div class="two"><input type="date" id="c-end"><input type="time" id="c-etime" value="18:00"></div></div>
+          <div class="fld only-close"><label class="lb">Actual End<span class="req">*</span></label><div class="two"><input type="date" id="c-end"><input type="time" id="c-etime" value="18:00"></div></div>
           <div class="fld only-close"><label class="lb" for="c-comp">일정 준수 여부<span class="req">*</span><span class="hintx" id="c-comp-hint"></span></label><select id="c-comp"></select></div>
           <div class="fld only-close only-delayed full"><label class="lb" for="c-delay">지연 사유<span class="req">*</span></label><select id="c-delay"></select></div>
           <div class="fld full"><label class="lb" id="c-eng-label">엔지니어<span class="req">*</span></label><div class="pills" id="c-eng"></div></div>
@@ -750,17 +750,17 @@ function renderCreate(){
   function checks(){
     const out = [], t = $("#c-title").value.trim(), d = $("#c-desc").value.trim();
     const s = $("#c-start").value, due = $("#c-due").value, people = isMeeting() ? st.cc : st.eng;
-    const need = [["제목",t,"#c-title"],["담당자",$("#c-assignee").value,"#c-assignee"],["시작",s,"#c-start"],["기한",due,"#c-due"],["설명",d,"#c-desc"]];
+    const need = [["제목",t,"#c-title"],["담당자",$("#c-assignee").value,"#c-assignee"],["시작/Actual Start",s,"#c-start"],["기한",due,"#c-due"],["설명",d,"#c-desc"]];
     need.forEach(([n,v,id])=>{ $(id).classList.toggle("bad", st.touched && !v); if(!v) out.push(["bad",`${n} 비어 있음`]); });
     if(!people.size) out.push(["bad",`${isMeeting()?"참조":"엔지니어"} 를 한 명 이상 고르세요`]);
-    if(s && due && due < s) out.push(["warn",`기한(${due})이 시작(${s})보다 빠릅니다`]);
+    if(s && due && due < s) out.push(["warn",`기한(${due})이 Actual Start(${s})보다 빠릅니다`]);
     if(st.mode==="close"){
       const e = $("#c-end").value;
       $("#c-end").classList.toggle("bad", st.touched && !e);
-      if(!e) out.push(["bad","종료(Actual end) 비어 있음"]);
-      else if(s && (e+$("#c-etime").value) < (s+$("#c-time").value)) out.push(["bad",`종료(${e})가 시작(${s})보다 빠릅니다`]);
+      if(!e) out.push(["bad","Actual End 비어 있음"]);
+      else if(s && (e+$("#c-etime").value) < (s+$("#c-time").value)) out.push(["bad",`Actual End(${e})가 Actual Start(${s})보다 빠릅니다`]);
       const c = $("#c-comp").value, sug = suggestComp();
-      if(sug && c!==sug) out.push(["warn",`일정 준수를 '${c}' 로 골랐습니다 — 종료일·기한으로는 '${sug}'`]);
+      if(sug && c!==sug) out.push(["warn",`일정 준수를 '${c}' 로 골랐습니다 — Actual End·기한으로는 '${sug}'`]);
       if(c==="Delayed" && !$("#c-delay").value) out.push(["bad","Delayed 이면 지연 사유를 고르세요 (비우면 리포트에 '지연 사유: 미기재')"]);
     }
     if(!out.length) out.push(["ok","필수 항목이 모두 채워졌습니다 — 매일 리포트의 미기입 규칙에 걸리지 않습니다"]);
@@ -768,7 +768,7 @@ function renderCreate(){
   }
   function update(){
     if(st.compAuto){ const sug=suggestComp(); if(sug) $("#c-comp").value = sug; }
-    $("#c-comp-hint").textContent = suggestComp() ? `종료일·기한 기준 추천: ${suggestComp()}` : "";
+    $("#c-comp-hint").textContent = suggestComp() ? `Actual End·기한 기준 추천: ${suggestComp()}` : "";
     document.querySelectorAll(".only-delayed").forEach(el=>el.hidden = !(st.mode==="close" && $("#c-comp").value==="Delayed"));
     const c = checks();
     $("#c-checks").innerHTML = c.map(([k,m])=>`<li class="${k}">${k==="ok"?"✓":k==="warn"?"!":"✕"} ${esc(m)}</li>`).join("");
