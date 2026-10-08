@@ -32,8 +32,12 @@ F = {
     "engineer": "customfield_12414", "cc": "customfield_12427", "support": "customfield_12428",
     "region": "customfield_12472", "solution": "customfield_12473", "route": "customfield_12480",
     "customer": "customfield_12487", "category": "customfield_12530", "start_date": "customfield_10015",
-    "actual_start": "customfield_10008",
+    "actual_start": "customfield_10008", "actual_end": "customfield_10009",
+    "compliance": "customfield_12594", "delay": "customfield_12604",
 }
+# 하위 작업·기술지원 워크플로 전환 id (2026-10-08 실측, docs/JIRA-FIELDS.md 7장).
+# 전환이 Actual start/end 를 '지금' 으로 덮어쓰므로 실제 값은 전환 뒤에 PUT 으로 다시 넣는다.
+TRANSITIONS = {"start": "2", "close": "3"}
 EXTRA = ["reporter", "priority", F["region"], F["route"], F["customer"], F["cc"]]
 
 
@@ -94,7 +98,7 @@ def _build() -> dict:
             meta = c.get(f"/issue/createmeta/{project}/issuetypes/{type_ids['기술지원']}",
                          params={"maxResults": 100})
             for fm in meta.get("fields") or meta.get("values") or []:
-                if fm["fieldId"] in (F["route"], F["region"]):
+                if fm["fieldId"] in (F["route"], F["region"], F["delay"], F["compliance"]):
                     options[fm["fieldId"]] = [a.get("value") for a in fm.get("allowedValues") or []]
 
         work = [r for r in rows if r["fields"]["issuetype"]["name"] not in PARENT_TYPES]
@@ -135,7 +139,9 @@ def _build() -> dict:
             "types": type_ids, "parents": parents, "people": people,
             "default_engineers": list(combo[0][0]) if combo else [],
             "me": {"id": me.get("accountId"), "name": me.get("displayName")},
-            "fixed": fixed, "options": {"route": options.get(F["route"], []), "region": options.get(F["region"], [])},
+            "fixed": fixed, "options": {"route": options.get(F["route"], []), "region": options.get(F["region"], []),
+                                         "delay": options.get(F["delay"], []), "compliance": options.get(F["compliance"], [])},
+            "transitions": TRANSITIONS,
             "category": {"project_child": collect.PROJECT_CHILD_CATEGORY, "default": collect.EXPECT_CATEGORY,
                          "meeting_kind": collect.MEETING_KIND, "project_kind": collect.PROJECT_KIND},
             "fields": F, "basis": len(rows),

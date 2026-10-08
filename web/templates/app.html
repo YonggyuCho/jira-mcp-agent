@@ -262,6 +262,7 @@ table.runs{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
 .checks li.ok{color:var(--ok)}.checks li.bad{color:var(--risk)}.checks li.warn{color:var(--mis)}
 pre.payload{margin:0;max-height:360px;overflow:auto;background:var(--surface-2);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-all}
 .side-stack{display:flex;flex-direction:column;gap:16px;position:sticky;top:68px}
+.only-close[hidden],.only-delayed[hidden]{display:none}
 .cactions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 @media (max-width:980px){.cgrid{grid-template-columns:1fr}.side-stack{position:static}.fgrid{grid-template-columns:1fr}}
 
@@ -362,11 +363,18 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
       <div class="card" style="margin-top:16px"><h2>2. 내용 입력</h2>
         <div class="fgrid">
           <div class="fld full"><label class="lb">유형<span class="req">*</span><span class="hintx">상위가 프로젝트면 하위 작업, 구축이면 기술지원이 기본</span></label><div class="pills" id="c-type"></div></div>
+          <div class="fld full"><label class="lb">등록 방식<span class="req">*</span><span class="hintx">Jira 가 상태를 바꿀 때 Actual start/end 를 지금 시각으로 덮어써서, 입력한 값은 마지막에 다시 넣는다</span></label><div class="pills" id="c-mode">
+            <label class="pill" data-m="open"><input type="radio" name="cmode" value="open">등록만 <small>(미해결)</small></label>
+            <label class="pill" data-m="progress"><input type="radio" name="cmode" value="progress">진행 중까지</label>
+            <label class="pill" data-m="close"><input type="radio" name="cmode" value="close">종료까지 <small>(끝난 작업 기록)</small></label></div></div>
           <div class="fld full"><label class="lb" for="c-title">제목<span class="req">*</span></label><input type="text" id="c-title" placeholder="예: GPU Live TIPA B300 노드 2대 증설"></div>
           <div class="fld"><label class="lb" for="c-assignee">담당자<span class="req">*</span></label><select id="c-assignee"></select></div>
           <div class="fld"><label class="lb" for="c-route">요청 경로<span class="req">*</span></label><select id="c-route"></select></div>
           <div class="fld"><label class="lb">시작<span class="req">*</span><span class="hintx">시작 날짜 · Actual start 에 같이 들어감</span></label><div class="two"><input type="date" id="c-start"><input type="time" id="c-time" value="09:00"></div></div>
           <div class="fld"><label class="lb" for="c-due">기한<span class="req">*</span></label><input type="date" id="c-due"></div>
+          <div class="fld only-close"><label class="lb">종료 (Actual end)<span class="req">*</span></label><div class="two"><input type="date" id="c-end"><input type="time" id="c-etime" value="18:00"></div></div>
+          <div class="fld only-close"><label class="lb" for="c-comp">일정 준수 여부<span class="req">*</span><span class="hintx" id="c-comp-hint"></span></label><select id="c-comp"></select></div>
+          <div class="fld only-close only-delayed full"><label class="lb" for="c-delay">지연 사유<span class="req">*</span></label><select id="c-delay"></select></div>
           <div class="fld full"><label class="lb" id="c-eng-label">엔지니어<span class="req">*</span></label><div class="pills" id="c-eng"></div></div>
           <div class="fld full"><label class="lb" for="c-desc">설명<span class="req">*</span><span class="hintx">비어 있으면 매일 리포트에서 '위험(미기입)' 으로 잡힌다</span></label><textarea id="c-desc" placeholder="요청 내용, 작업 범위, 참고 링크"></textarea></div>
         </div>
@@ -653,7 +661,7 @@ function renderCreate(){
   $("#c-epic").textContent = M.epic_title ? `· Epic: ${M.epic_title}` : "";
   $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `보고자 = ${esc(M.me.name)} (등록하는 계정)`].join('<span class="dot"></span>');
   const today = new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
-  const st = {parent:M.parents[0]?.key, type:null, eng:new Set(M.default_engineers), cc:new Set(), touched:false};
+  const st = {parent:M.parents[0]?.key, type:null, mode:"close", eng:new Set(M.default_engineers), cc:new Set(), touched:false, compAuto:true};
   const P = () => M.parents.find(p=>p.key===st.parent) || {};
   const name = id => (M.people.find(x=>x.id===id)||{}).name || id;
 
@@ -666,7 +674,20 @@ function renderCreate(){
   $("#c-assignee").innerHTML = `<option value="">— 선택 —</option>` + M.people.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join("");
   $("#c-assignee").value = M.me.id || "";
   $("#c-route").innerHTML = M.options.route.map(v=>`<option>${esc(v)}</option>`).join("");
-  $("#c-start").value = today; $("#c-due").value = today;
+  $("#c-start").value = today; $("#c-due").value = today; $("#c-end").value = today;
+  $("#c-comp").innerHTML = (M.options.compliance||["Early","On Time","Delayed"]).filter(v=>v!=="Not Evaluated").map(v=>`<option>${esc(v)}</option>`).join("");
+  $("#c-delay").innerHTML = `<option value="">— 선택 —</option>` + (M.options.delay||[]).map(v=>`<option>${esc(v)}</option>`).join("");
+  function setMode(m){
+    st.mode = m;
+    document.querySelectorAll("#c-mode .pill").forEach(l=>{ const on=l.dataset.m===m; l.classList.toggle("on",on); l.querySelector("input").checked=on; });
+    document.querySelectorAll(".only-close").forEach(el=>el.hidden = m!=="close");
+    update();
+  }
+  // 일정 준수 자동 추천: 종료일 vs 기한. 사람이 바꾸면 그 뒤로는 자동으로 안 바꾼다 (저장된 값을 사람이 확인 — R4).
+  function suggestComp(){
+    const e=$("#c-end").value, d=$("#c-due").value; if(!e||!d) return "";
+    return e<d ? "Early" : e===d ? "On Time" : "Delayed";
+  }
 
   function pickParent(k){
     st.parent = k; const p = P();
@@ -692,6 +713,22 @@ function renderCreate(){
     const paras = text.split(/\n/).map(l=>l.trim()?{type:"paragraph",content:[{type:"text",text:l}]}:{type:"paragraph"});
     return {type:"doc",version:1,content:paras};
   }
+  const dt = (d,t) => d ? `${d}T${t||"09:00"}:00.000+0900` : null;
+  function steps(){
+    const body = payload(), F = M.fields, out = [{step:1, what:"등록", method:"POST", path:"/rest/api/3/issue", body}];
+    if(st.mode==="open") return out;
+    out.push({step:2, what:"작업 시작 → 진행 중 (Actual start 가 지금으로 덮임)", method:"POST", path:"/rest/api/3/issue/{키}/transitions", body:{transition:{id:M.transitions.start}}});
+    if(st.mode==="close")
+      out.push({step:3, what:"종결 → 종료 (Actual end 가 지금으로 덮임)", method:"POST", path:"/rest/api/3/issue/{키}/transitions", body:{transition:{id:M.transitions.close}}});
+    const fix = {[F.actual_start]: dt($("#c-start").value, $("#c-time").value)};
+    if(st.mode==="close"){
+      fix[F.actual_end] = dt($("#c-end").value, $("#c-etime").value);
+      fix[F.compliance] = {value:$("#c-comp").value};
+      if($("#c-comp").value==="Delayed" && $("#c-delay").value) fix[F.delay] = {value:$("#c-delay").value};
+    }
+    out.push({step:out.length+1, what:"입력한 실제 값으로 다시 넣기", method:"PUT", path:"/rest/api/3/issue/{키}", body:{fields:fix}});
+    return out;
+  }
   function payload(){
     const p = P(), F = M.fields, people = isMeeting() ? st.cc : st.eng;
     const f = {
@@ -700,7 +737,7 @@ function renderCreate(){
       assignee: $("#c-assignee").value ? {accountId:$("#c-assignee").value} : null,
       duedate:$("#c-due").value || null,
       [F.start_date]: $("#c-start").value || null,
-      [F.actual_start]: $("#c-start").value ? `${$("#c-start").value}T${$("#c-time").value||"09:00"}:00.000+0900` : null,
+      [F.actual_start]: dt($("#c-start").value, $("#c-time").value),
       description: adf($("#c-desc").value),
       [F.solution]:[{value:M.fixed.solution}], [F.support]:{value:M.fixed.support},
       [F.route]:{value:$("#c-route").value}, [F.customer]: p.customer ? [p.customer] : [],
@@ -717,39 +754,56 @@ function renderCreate(){
     need.forEach(([n,v,id])=>{ $(id).classList.toggle("bad", st.touched && !v); if(!v) out.push(["bad",`${n} 비어 있음`]); });
     if(!people.size) out.push(["bad",`${isMeeting()?"참조":"엔지니어"} 를 한 명 이상 고르세요`]);
     if(s && due && due < s) out.push(["warn",`기한(${due})이 시작(${s})보다 빠릅니다`]);
+    if(st.mode==="close"){
+      const e = $("#c-end").value;
+      $("#c-end").classList.toggle("bad", st.touched && !e);
+      if(!e) out.push(["bad","종료(Actual end) 비어 있음"]);
+      else if(s && (e+$("#c-etime").value) < (s+$("#c-time").value)) out.push(["bad",`종료(${e})가 시작(${s})보다 빠릅니다`]);
+      const c = $("#c-comp").value, sug = suggestComp();
+      if(sug && c!==sug) out.push(["warn",`일정 준수를 '${c}' 로 골랐습니다 — 종료일·기한으로는 '${sug}'`]);
+      if(c==="Delayed" && !$("#c-delay").value) out.push(["bad","Delayed 이면 지연 사유를 고르세요 (비우면 리포트에 '지연 사유: 미기재')"]);
+    }
     if(!out.length) out.push(["ok","필수 항목이 모두 채워졌습니다 — 매일 리포트의 미기입 규칙에 걸리지 않습니다"]);
     return out;
   }
   function update(){
+    if(st.compAuto){ const sug=suggestComp(); if(sug) $("#c-comp").value = sug; }
+    $("#c-comp-hint").textContent = suggestComp() ? `종료일·기한 기준 추천: ${suggestComp()}` : "";
+    document.querySelectorAll(".only-delayed").forEach(el=>el.hidden = !(st.mode==="close" && $("#c-comp").value==="Delayed"));
     const c = checks();
     $("#c-checks").innerHTML = c.map(([k,m])=>`<li class="${k}">${k==="ok"?"✓":k==="warn"?"!":"✕"} ${esc(m)}</li>`).join("");
     const p = P();
     const rows = [["Jira 프로젝트",M.project],["Epic",M.epic_title||"-"],["프로젝트(상위)",p.title||"-"],["솔루션",M.fixed.solution],["엔지니어 지원 방법",M.fixed.support],
       ["고객사명(통합키)",p.customer||"-"],["권역",p.region||"-"],["우선순위",M.fixed.priority],
-      ["이슈 분류",category()+'<span class="auto">자동</span>'],["일정 준수 여부","Not Evaluated (Jira 기본값)"],["보고자",esc(M.me.name)]];
+      ["이슈 분류",category()+'<span class="auto">자동</span>'],["일정 준수 여부", st.mode==="close" ? "입력값 (4단계에서 넣음)" : "Not Evaluated (Jira 기본값)"],
+      ["최종 상태", {open:"미해결", progress:"진행 중", close:"종료"}[st.mode]],["보고자",esc(M.me.name)]];
     $("#c-fixed").innerHTML = rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${k==="이슈 분류"?v:esc(v)}</dd>`).join("");
-    $("#c-payload").textContent = JSON.stringify(payload(), null, 2);
+    $("#c-payload").textContent = steps().map(x=>`// ${x.step}. ${x.what}\n${x.method} ${x.path}\n${JSON.stringify(x.body, null, 2)}`).join("\n\n");
   }
 
   $("#c-parents").addEventListener("click", e=>{ const b=e.target.closest(".pcard"); if(b) pickParent(b.dataset.k); });
   $("#c-type").addEventListener("change", e=>setType(e.target.value));
+  $("#c-mode").addEventListener("change", e=>setMode(e.target.value));
+  $("#c-comp").addEventListener("change", ()=>{ st.compAuto=false; update(); });
+  ["#c-end","#c-etime","#c-delay"].forEach(id=>$(id).addEventListener("input", update));
   $("#c-eng").addEventListener("change", e=>{
     const l = e.target.closest(".pill"); const set = isMeeting() ? st.cc : st.eng;
     e.target.checked ? set.add(l.dataset.u) : set.delete(l.dataset.u); l.classList.toggle("on", e.target.checked); update();
   });
   ["#c-title","#c-assignee","#c-route","#c-start","#c-time","#c-due","#c-desc"].forEach(id=>$(id).addEventListener("input", update));
   $("#c-reset").onclick = ()=>{ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); $("#c-start").value=today; $("#c-due").value=today; $("#c-time").value="09:00";
-    st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; $("#c-notices").innerHTML=""; pickParent(M.parents[0]?.key); };
+    st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; st.compAuto=true; $("#c-end").value=today; $("#c-etime").value="18:00"; $("#c-delay").value="";
+    $("#c-notices").innerHTML=""; pickParent(M.parents[0]?.key); setMode("close"); };
   $("#c-copy").onclick = ()=>{ navigator.clipboard && navigator.clipboard.writeText($("#c-payload").textContent); $("#c-copy").textContent="복사됨"; setTimeout(()=>$("#c-copy").textContent="JSON 복사",1200); };
   $("#c-submit").onclick = ()=>{
     st.touched = true; update();
     const bad = checks().filter(c=>c[0]==="bad");
     $("#c-notices").innerHTML = bad.length
       ? `<div class="notice err"><b>입력이 부족합니다</b><span class="grow">${bad.map(b=>esc(b[1])).join(" · ")}</span></div>`
-      : `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">오른쪽 "Jira 로 보낼 내용" 이 실제 등록 때 보낼 JSON 입니다. 실제 등록은 쓰기 권한을 붙인 뒤에 켭니다.</span></div>`;
+      : `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">오른쪽 "Jira 로 보낼 내용" 이 실제 등록 때 순서대로 보낼 요청입니다. 실제 등록은 쓰기 권한을 붙인 뒤에 켭니다.</span></div>`;
     window.scrollTo({top:0,behavior:"smooth"});
   };
-  pickParent(st.parent);
+  pickParent(st.parent); setMode(st.mode);
 }
 
 /* ===== 페이지 선택 ===== */
