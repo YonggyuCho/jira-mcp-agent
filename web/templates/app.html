@@ -670,7 +670,7 @@ function renderCreate(){
     return;
   }
   $("#c-epic").textContent = M.epic_title ? `· Epic: ${M.epic_title}` : "";
-  $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `보고자 = ${esc(M.me.name)} (등록하는 계정)`].join('<span class="dot"></span>');
+  $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `등록 계정 = ${esc(M.me.name)}`].join('<span class="dot"></span>');
   const today = new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
   const st = {parent:M.parents[0]?.key, type:null, mode:"close", catAuto:true, eng:new Set(M.default_engineers), cc:new Set(), touched:false, compAuto:true};
   const P = () => M.parents.find(p=>p.key===st.parent) || {};
@@ -758,6 +758,7 @@ function renderCreate(){
       priority:{name:M.fixed.priority},
     };
     f[isMeeting() ? F.cc : F.engineer] = [...people].map(id=>({accountId:id}));
+    if(M.reporter && M.reporter.id && (M.reporter.on_screen||{})[st.type]) f.reporter = {accountId:M.reporter.id};
     return {fields:f};
   }
   function checks(){
@@ -780,6 +781,13 @@ function renderCreate(){
     if(!out.length) out.push(["ok","필수 항목이 모두 채워졌습니다 — 매일 리포트의 미기입 규칙에 걸리지 않습니다"]);
     return out;
   }
+  // 보고자: 고정값이 있고 그 유형 등록 화면에 보고자 칸이 있으면 고정값, 없으면 만든 사람(토큰 계정)
+  function reporterText(){
+    const R = M.reporter || {}, on = (R.on_screen||{})[st.type];
+    if(R.id && on) return `${R.name} (고정)`;
+    if(R.id && !on) return `${M.me.name} — ${st.type}는 보고자를 지정할 수 없어 만든 사람이 됨`;
+    return `${M.me.name} (만든 사람)`;
+  }
   function update(){
     if(st.compAuto){ const sug=suggestComp(); if(sug) $("#c-comp").value = sug; }
     if(st.catAuto) $("#c-cat").value = categoryDefault();
@@ -792,7 +800,7 @@ function renderCreate(){
     const rows = [["Jira 프로젝트",M.project],["Epic",M.epic_title||"-"],["프로젝트(상위)",p.title||"-"],["솔루션",M.fixed.solution],["엔지니어 지원 방법",M.fixed.support],
       ["고객사명(통합키)",p.customer||"-"],["권역",p.region||"-"],["우선순위",M.fixed.priority],
       ["요청 경로",M.fixed.route],["일정 준수 여부", st.mode==="close" ? "입력값 (4단계에서 넣음)" : "Not Evaluated (Jira 기본값)"],
-      ["최종 상태", {open:"미해결", progress:"진행 중", close:"종료"}[st.mode]],["보고자",esc(M.me.name)]];
+      ["최종 상태", {open:"미해결", progress:"진행 중", close:"종료"}[st.mode]],["보고자", reporterText()]];
     $("#c-fixed").innerHTML = rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
     $("#c-payload").textContent = steps().map(x=>`// ${x.step}. ${x.what}\n${x.method} ${x.path}\n${JSON.stringify(x.body, null, 2)}`).join("\n\n");
   }

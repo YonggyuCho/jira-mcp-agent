@@ -85,12 +85,18 @@ def _build() -> dict:
 
         # 유형 id (회의는 subtask 쪽)
         types = c.get(f"/issue/createmeta/{project}/issuetypes").get("issueTypes", [])
+        # 유형별로 등록 화면에 보고자 칸이 있는지 (기술지원은 없다 — 만든 사람이 보고자가 된다, 2026-10-12 실측)
         type_ids = {}
         for name in TYPES:
             cands = [t for t in types if t["name"] == name]
             pick = next((t for t in cands if t.get("subtask")), cands[0] if cands else None)
             if pick:
                 type_ids[name] = pick["id"]
+
+        reporter_ok = {}
+        for name, tid in type_ids.items():
+            m = c.get(f"/issue/createmeta/{project}/issuetypes/{tid}", params={"maxResults": 200})
+            reporter_ok[name] = any(f["fieldId"] == "reporter" for f in (m.get("fields") or m.get("values") or []))
 
         # 선택지 (요청 경로·권역) — 기술지원 유형의 메타에서
         options: dict[str, list[str]] = {}
@@ -127,6 +133,10 @@ def _build() -> dict:
         combo = Counter(tuple(sorted(u["accountId"] for u in (r["fields"].get(F["engineer"]) or [])))
                         for r in work if r["fields"].get(F["engineer"])).most_common(1)
         me = c.get("/myself")
+        # 보고자 고정 (.env WEB_FORM_REPORTER, 표시 이름). 사람 목록에서 계정 ID 를 찾는다.
+        rname = os.environ.get("WEB_FORM_REPORTER", "").strip()
+        rid = next((u.get("accountId") for r in rows for u in [r["fields"].get("reporter"), r["fields"].get("assignee")]
+                    if isinstance(u, dict) and u.get("displayName") == rname), None) if rname else None
         epic_title = (c.get(f"/issue/{epic}", params={"fields": "summary"})["fields"].get("summary") or "").strip() if epic else ""
         fixed = {
             "solution": solution,
@@ -140,6 +150,7 @@ def _build() -> dict:
             "types": type_ids, "parents": parents, "people": people,
             "default_engineers": list(combo[0][0]) if combo else [],
             "me": {"id": me.get("accountId"), "name": me.get("displayName")},
+            "reporter": {"id": rid, "name": rname if rid else None, "on_screen": reporter_ok},
             "fixed": fixed, "options": {"route": options.get(F["route"], []), "region": options.get(F["region"], []),
                                          "delay": options.get(F["delay"], []), "compliance": options.get(F["compliance"], []),
                                          "category": options.get(F["category"], [])},
