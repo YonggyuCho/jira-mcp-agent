@@ -242,6 +242,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    jira_form.warm()  # Jira 등록 양식 데이터를 미리 읽어 둔다 (첫 접속 대기 제거)
     print(f"listening on http://{HOST}:{PORT}", file=sys.stderr)
     srv.serve_forever()
 

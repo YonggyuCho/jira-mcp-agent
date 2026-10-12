@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 from jira_mcp import client, config
 
@@ -93,16 +94,23 @@ def _build() -> dict:
             if pick:
                 type_ids[name] = pick["id"]
 
-        reporter_ok = {}
-        for name, tid in type_ids.items():
-            m = c.get(f"/issue/createmeta/{project}/issuetypes/{tid}", params={"maxResults": 200})
-            reporter_ok[name] = any(f["fieldId"] == "reporter" for f in (m.get("fields") or m.get("values") or []))
+        # 서로 의존하지 않는 호출은 동시에 보낸다 (Jira Cloud 왕복이 호출당 0.5~1초라 순서대로면 느리다)
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            metas_f = {name: ex.submit(c.get, f"/issue/createmeta/{project}/issuetypes/{tid}",
+                                       params={"maxResults": 200}) for name, tid in type_ids.items()}
+            me_f = ex.submit(c.get, "/myself")
+            epic_f = ex.submit(c.get, f"/issue/{epic}", params={"fields": "summary"}) if epic else None
+            metas = {name: f.result() for name, f in metas_f.items()}
+            me = me_f.result()
+            epic_title = (epic_f.result()["fields"].get("summary") or "").strip() if epic_f else ""
+
+        reporter_ok = {name: any(f["fieldId"] == "reporter" for f in (m.get("fields") or m.get("values") or []))
+                       for name, m in metas.items()}
 
         # 선택지 (요청 경로·권역) — 기술지원 유형의 메타에서
         options: dict[str, list[str]] = {}
-        if "기술지원" in type_ids:
-            meta = c.get(f"/issue/createmeta/{project}/issuetypes/{type_ids['기술지원']}",
-                         params={"maxResults": 100})
+        if "기술지원" in metas:
+            meta = metas["기술지원"]
             for fm in meta.get("fields") or meta.get("values") or []:
                 if fm["fieldId"] in (F["route"], F["region"], F["delay"], F["compliance"], F["category"]):
                     options[fm["fieldId"]] = [a.get("value") for a in fm.get("allowedValues") or []]
@@ -132,12 +140,10 @@ def _build() -> dict:
         # 엔지니어 기본값 = 실무 이슈에서 가장 많이 나온 엔지니어 조합
         combo = Counter(tuple(sorted(u["accountId"] for u in (r["fields"].get(F["engineer"]) or [])))
                         for r in work if r["fields"].get(F["engineer"])).most_common(1)
-        me = c.get("/myself")
         # 보고자 고정 (.env WEB_FORM_REPORTER, 표시 이름). 사람 목록에서 계정 ID 를 찾는다.
         rname = os.environ.get("WEB_FORM_REPORTER", "").strip()
         rid = next((u.get("accountId") for r in rows for u in [r["fields"].get("reporter"), r["fields"].get("assignee")]
                     if isinstance(u, dict) and u.get("displayName") == rname), None) if rname else None
-        epic_title = (c.get(f"/issue/{epic}", params={"fields": "summary"})["fields"].get("summary") or "").strip() if epic else ""
         fixed = {
             "solution": solution,
             "support": collect.EXPECT_SUPPORT,
@@ -164,17 +170,42 @@ def _build() -> dict:
         c.close()
 
 
+def _rebuild() -> dict:
+    try:
+        data = _build()
+    except Exception as exc:  # 화면은 떠야 한다 — 오류를 화면에 보여 준다
+        return {"ok": False, "error": str(exc)[:300]}
+    _cache.update(at=time.time(), data=data)
+    return data
+
+
+def _refresh_bg() -> None:
+    if _lock.acquire(blocking=False):  # 이미 누가 다시 읽는 중이면 그대로 둔다
+        def run():
+            try:
+                _rebuild()
+            finally:
+                _lock.release()
+        threading.Thread(target=run, daemon=True).start()
+
+
+def warm() -> None:
+    """서버 기동 직후 미리 읽어 둔다 — 첫 접속이 기다리지 않게."""
+    _refresh_bg()
+
+
 def form_meta(refresh: bool = False) -> dict:
-    """10분 캐시. Jira 를 못 읽으면 ok=False 와 오류 문구."""
-    with _lock:
-        if not refresh and _cache["data"] and time.time() - _cache["at"] < CACHE_SEC:
-            return _cache["data"]
-        try:
-            data = _build()
-        except Exception as exc:  # 화면은 떠야 한다 — 오류를 화면에 보여 준다
-            return {"ok": False, "error": str(exc)[:300]}
-        _cache.update(at=time.time(), data=data)
+    """캐시를 바로 돌려준다. 10분이 지났으면 돌려준 뒤 뒤에서 다시 읽는다 (화면은 기다리지 않는다).
+    캐시가 아예 없거나 refresh=True('Jira 에서 다시 읽기')일 때만 기다린다. 못 읽으면 ok=False 와 오류 문구."""
+    data = _cache["data"]
+    if data and not refresh:
+        if time.time() - _cache["at"] >= CACHE_SEC:
+            _refresh_bg()
         return data
+    with _lock:
+        if not refresh and _cache["data"]:  # 기다리는 동안 다른 요청이 채웠다
+            return _cache["data"]
+        return _rebuild()
 
 
 # ── 검증 (dry-run) ─────────────────────────────────────────────────────────

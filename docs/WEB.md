@@ -50,7 +50,7 @@ cron (평일 09:00) ─┐
 | `/create` | **Jira 등록 (데모)** — 상위 선택 + 매번 바뀌는 값만 입력, 고정값은 자동. 보낼 JSON 미리보기. **실제 등록은 안 함** |
 | `POST /action/create` | **실제 등록** — `WEB_CREATE_ENABLED=1` 일 때만. 허용 범위 재확인 + 직전 Dry-run 후 1~4단계 실행 |
 | `POST /action/validate` | 등록 검증 (dry-run) — 읽기 API 로 각 단계 통과 여부 확인, 결과 JSON |
-| `/create?refresh=1` | 등록 양식을 Jira 에서 다시 읽기 (평소 10분 캐시) |
+| `/create?refresh=1` | 등록 양식을 Jira 에서 다시 읽기 (평소엔 캐시를 바로 보여 주고, 10분 지났으면 뒤에서 다시 읽는다. 이 버튼만 기다린다 — 약 5초) |
 | `/healthz` | 살아 있는지 (`ok`) |
 | `POST /action/preview` | Jira 새로 읽기, 발송 안 함 |
 | `POST /action/send` | 실제 Teams 발송 (확인 창) |
@@ -96,7 +96,7 @@ sed -i '/^WEB_UI=/d' /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web  
 목적: Jira 화면에 매번 들어가 필드를 다 채우지 않고, **상위(Epic)만 고르고 매번 바뀌는 값만** 넣어 등록.
 지금은 **데모** — 보낼 JSON 을 보여 줄 뿐 Jira 로 보내지 않는다. 토큰도 읽기 전용이다.
 
-`web/jira_form.py` 가 Jira 를 실측해 양식을 만든다 (10분 캐시):
+`web/jira_form.py` 가 Jira 를 실측해 양식을 만든다 (캐시. 서버 기동 때 미리 읽고, 10분 지나면 화면을 막지 않고 뒤에서 갱신한다. 독립 호출은 동시에 보낸다):
 - 유형 id 는 `createmeta` 로 찾는다. 이 사이트는 '회의' 유형이 둘(일반·하위)이라 **하위(subtask) 쪽**을 고른다.
 - 상위 후보 = 에픽(`AGENT_EPIC`) 직속 프로젝트·구축. 고르면 기본 유형(프로젝트→하위 작업, 구축→기술지원)·권역·고객사명·요청 경로가 따라온다.
 - 사람 목록 = 대상 이슈에 담당·보고·엔지니어·참조로 나온 사람, 많이 나온 순. 엔지니어 기본값 = 가장 흔한 조합.
