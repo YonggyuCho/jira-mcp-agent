@@ -66,6 +66,7 @@ python -m venv .venv
 ```
 
 검증된 조합: **Python 3.14.3 / mcp 2.2.0 / httpx 0.28.1 / python-dotenv 1.2.3**.
+Linux 서버의 **Python 3.10.12** 에서도 mcp 2.2.0 으로 `smoke_test.py` 23/23 통과 (2026-10-12).
 `requirements.txt` 가 버전을 고정한다 — mcp 1.x 는 `FastMCP` 라 import 부터 깨진다.
 
 ## 검증

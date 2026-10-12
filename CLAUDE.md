@@ -6,13 +6,14 @@
 
 | | 무엇 | 어디서 | 의존성 |
 |---|---|---|---|
-| `jira_mcp/` | Claude Code 가 붙는 MCP 서버 (stdio) | 개발자 PC | `requirements.txt` |
+| `jira_mcp/` | Claude Code 가 붙는 MCP 서버 (stdio) | **Claude Code 를 쓰는 기계** — 개발자 PC, 클라우드 서버 | `requirements.txt` |
 | `agent/` | 매일 1회 도는 취합 에이전트 (cron) | 클라우드 서버 | `requirements-agent.txt` |
 | `web/` | 에이전트 결과를 보는 웹 화면 (nginx 뒤, 127.0.0.1) | 클라우드 서버 | 없음 (표준 라이브러리) |
 
 공통은 `jira_mcp/client.py` + `config.py` (Jira REST 래퍼), `requirements-core.txt`.
 **에이전트는 MCP 프로토콜을 쓰지 않는다** — `jira_mcp.client` 를 직접 import 한다.
-그래서 서버에는 `mcp` 패키지도, 전송·인증 설계도 필요 없다.
+에이전트만 돌린다면 `mcp` 패키지는 필요 없다. MCP 서버는 stdio 라서 **그걸 쓰는 Claude Code 와 같은 기계**에
+등록한다 — 클라우드 서버에서도 Claude Code 를 쓰므로 거기에도 등록돼 있다 (2026-10-12).
 
 **새 세션에서 이 저장소를 처음 열었다면 이 파일을 끝까지 읽고 시작한다.**
 여기 적힌 것들은 코드를 봐서는 알 수 없고, 모르면 반드시 같은 함정에 다시 빠진다.

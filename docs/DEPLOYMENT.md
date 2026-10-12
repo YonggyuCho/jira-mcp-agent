@@ -1,6 +1,7 @@
 # 배포와 이전
 
-지금은 **개발자 PC 에서 stdio 로** 돈다. 이 문서는 (1) 다른 기계에 그대로 세우는 법과
+MCP 서버는 **stdio 로, 그걸 쓰는 Claude Code 와 같은 기계에서** 돈다 — 개발자 PC 와 클라우드 서버 둘 다 (2026-10-12).
+원격(HTTP)으로 여는 것은 다른 기계의 Claude Code 가 붙어야 할 때만 필요하다(3장). 이 문서는 (1) 다른 기계에 그대로 세우는 법과
 (2) 원격 서버로 옮길 때 무엇이 달라지는지를 적는다.
 
 최종 확인: 2026-09-22
@@ -193,6 +194,9 @@ NHN Cloud 인스턴스 타입 이름은 콘솔에서 바뀌므로, **위 사양�
 - **Python 3.10 이상.** [확인] Ubuntu 22.04 기본 파이썬 3.10.12 에서 `anthropic==1.8.0`,
   `httpx==0.28.1`, `python-dotenv==1.2.3` 설치와 에이전트 실행까지 확인했다.
   로컬 개발은 3.14.3 이다. **배포판 기본 파이썬을 그대로 쓰면 되고** 새 버전을 올릴 필요 없다.
+  MCP 서버도 3.10.12 에서 mcp 2.2.0 으로 동작한다 (smoke_test 23/23, 2026-10-12).
+  서버에 MCP 등록: `pip install -r requirements.txt` 후
+  `claude mcp add --scope user jira -- /opt/jira-mcp/.venv/bin/python /opt/jira-mcp/run.py` → Claude Code 재시작.
   (MCP 서버는 서버에 올리지 않으므로 `mcp` 패키지의 파이썬 요구사항은 고려 대상이 아니다.)
 
 > **함정 — `python3-venv` 가 없으면 venv 는 만들어지는데 pip 이 없다.**
