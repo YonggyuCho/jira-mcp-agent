@@ -351,11 +351,16 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
     <thead><tr><th>시각</th><th>출처</th><th>결과</th><th>건수</th><th>웹훅</th><th>오류</th></tr></thead>
     <tbody id="runs-body"></tbody>
   </table></div>
+  <div id="creates-box" hidden><h2 style="font-size:16px;margin:28px 0 8px">Jira 등록 기록</h2>
+  <div class="tablebox runs-box"><table class="runs">
+    <thead><tr><th>시각</th><th>이슈</th><th>제목</th><th>결과</th><th>오류</th></tr></thead>
+    <tbody id="creates-body"></tbody>
+  </table></div></div>
 </main>
 
 <main class="wrap" id="page-create" hidden>
   <div class="head"><div>
-    <h1>Jira 등록 <span class="demo-tag">데모 · 실제 등록 안 함</span></h1>
+    <h1>Jira 등록 <span class="demo-tag" id="c-demo">데모 · 실제 등록 안 함</span></h1>
     <div class="meta" id="c-meta"></div>
   </div>
   <div class="actions"><a class="btn" href="/create?refresh=1">Jira 에서 다시 읽기</a></div></div>
@@ -658,6 +663,14 @@ function renderRuns(){
     <td class="cnt">${r.r==null ? '<span class="none">-</span>' : `<span class="r">위험 ${r.r}</span> · <span class="m">불일치 ${r.m}</span>`}</td>
     <td class="hk">${r.hook}</td>
     <td class="err">${esc(r.err)}</td></tr>`).join("");
+  const C = DATA.creates || [];
+  $("#creates-box").hidden = !C.length;
+  $("#creates-body").innerHTML = C.map(x=>`<tr>
+    <td class="t">${esc((x.at||"").replace("T"," "))}</td>
+    <td>${x.key ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.key)}</a>` : '<span class="none">-</span>'}</td>
+    <td>${esc(x.title||"")}</td>
+    <td><span class="res ${x.ok?"sent":"fail"}">${x.ok?"완료":(x.key?"일부만":"실패")}</span></td>
+    <td class="err">${esc(x.error||"")}</td></tr>`).join("");
 }
 
 /* ===== Jira 등록 (데모) ===== */
@@ -669,6 +682,10 @@ function renderCreate(){
     $("#c-notices").innerHTML = `<div class="notice err"><b>Jira 를 읽지 못했습니다</b><span class="grow">${esc(M.error||"")}</span></div>`;
     return;
   }
+  const LIVE = !!M.create_enabled;
+  $("#c-demo").textContent = LIVE ? "실제 등록" : "데모 · 실제 등록 안 함";
+  if(LIVE){ $("#c-demo").style.color="var(--ok)"; $("#c-demo").style.background="var(--ok-bg)"; $("#c-demo").style.borderColor="var(--ok-border)"; }
+  $("#c-submit").lastChild.textContent = LIVE ? "등록" : "등록 (데모)";
   $("#c-epic").textContent = M.epic_title ? `· Epic: ${M.epic_title}` : "";
   $("#c-meta").innerHTML = [`Jira 실측 ${esc(M.at)}`, `기준 이슈 ${M.basis}건`, `등록 계정 = ${esc(M.me.name)}`].join('<span class="dot"></span>');
   const today = new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
@@ -845,7 +862,8 @@ function renderCreate(){
       $("#v-title").innerHTML = warn.length
         ? `<span style="color:var(--mis)">! Dry-run 통과 — 확인할 것 ${warn.length}개</span>`
         : `<span style="color:var(--ok)">✓ Dry-run 통과</span>`;
-      $("#v-sub").textContent = `"${$("#c-title").value.trim()}" 을(를) ${P().title} 아래에 ${st.type} 로 등록합니다 (${mode}). 등록할까요?`;
+      $("#v-sub").textContent = `"${$("#c-title").value.trim()}" 을(를) ${P().title} 아래에 ${st.type} 로 등록합니다 (${mode}). `
+        + (LIVE ? "Jira 에 실제로 이슈가 만들어집니다. 등록할까요?" : "등록할까요? (데모 — 실제로는 보내지 않음)");
       $("#v-list").innerHTML = warn.length ? listHtml(warn) : "";
       $("#v-ok").hidden = false; $("#v-ok").textContent = warn.length ? "그래도 등록" : "등록"; $("#v-cancel").textContent = "취소";
     }
@@ -855,10 +873,27 @@ function renderCreate(){
     dlg.returnValue = ""; dlg.showModal();
     dlg.addEventListener("close", ()=>{ if(dlg.returnValue==="ok") registered(); }, {once:true});
   }
-  function registered(){
-    // 데모: 실제로는 여기서 서버가 1~4단계를 차례로 보낸다.
-    $("#c-notices").innerHTML = `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">Dry-run 은 통과했습니다. 실제 등록을 켜면 오른쪽 "Jira 로 보낼 내용" 의 요청이 순서대로 나갑니다.</span></div>`;
+  async function registered(){
     window.scrollTo({top:0,behavior:"smooth"});
+    if(!LIVE){
+      $("#c-notices").innerHTML = `<div class="notice ok"><b>데모 — Jira 로 보내지 않았습니다</b><span class="grow">Dry-run 은 통과했습니다. 실제 등록을 켜면 오른쪽 "Jira 로 보낼 내용" 의 요청이 순서대로 나갑니다.</span></div>`;
+      return;
+    }
+    const b = $("#c-submit"); b.disabled = true; b.classList.add("busy"); b.lastChild.textContent = "등록 중…";
+    $("#c-notices").innerHTML = `<div class="notice run"><span class="spin"></span><span class="grow">Jira 에 등록하는 중입니다 — 창을 닫지 마세요</span></div>`;
+    try{
+      const r = await fetch("/action/create", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps()})});
+      const res = await r.json();
+      const done = (res.done||[]).map(esc).join(" → ");
+      const link = res.key ? ` <a href="${esc(res.url)}" target="_blank" rel="noopener"><b>${esc(res.key)}</b> 열기</a>` : "";
+      $("#c-notices").innerHTML = res.ok
+        ? `<div class="notice ok"><b>등록 완료${res.key?" — "+esc(res.key):""}</b><span class="grow">${done}</span>${link}</div>`
+        : `<div class="notice err"><b>${res.key ? "일부만 처리됨 — "+esc(res.key)+" 는 만들어졌습니다" : "등록하지 못했습니다"}</b><span class="grow">${esc(res.error||"")}${done?" · 완료: "+done:""}</span>${link}</div>`;
+      if(res.ok){ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); st.touched=false; update(); }
+    }catch(e){
+      $("#c-notices").innerHTML = `<div class="notice err"><b>응답을 받지 못했습니다</b><span class="grow">${esc(e.message)} — Jira 에 만들어졌을 수 있으니 실행 기록이나 Jira 를 확인하세요.</span></div>`;
+    }
+    b.disabled = false; b.classList.remove("busy"); b.lastChild.textContent = "등록";
   }
   $("#c-submit").onclick = async ()=>{
     st.touched = true; update();
@@ -871,7 +906,7 @@ function renderCreate(){
     $("#c-notices").innerHTML = `<div class="notice run"><span class="spin"></span><span class="grow">Dry-run — Jira 에 각 단계가 통과할지 확인하는 중입니다 (아무것도 쓰지 않음)</span></div>`;
     try{ const res = await dryRun(); $("#c-notices").innerHTML = ""; askRegister(res); }
     catch(e){ $("#c-notices").innerHTML = `<div class="notice err"><b>Dry-run 을 못 했습니다</b><span class="grow">${esc(e.message)} — 등록하지 않았습니다.</span></div>`; }
-    b.disabled = false; b.classList.remove("busy"); b.lastChild.textContent = "등록 (데모)";
+    b.disabled = false; b.classList.remove("busy"); b.lastChild.textContent = LIVE ? "등록" : "등록 (데모)";
   };
   pickParent(st.parent); setMode(st.mode);
 }

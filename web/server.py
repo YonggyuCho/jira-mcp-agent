@@ -81,6 +81,20 @@ def _runs_list(runs: list[dict]) -> list[dict]:
     return out
 
 
+def _creates(limit: int = 50) -> list[dict]:
+    """웹 'Jira 등록' 기록 (runs/creates.jsonl), 최신순."""
+    p = store.RUNS / "creates.jsonl"
+    if not p.is_file():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines()[-limit:]:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out[::-1]
+
+
 def _prev_of(run: dict, runs: list[dict]) -> dict | None:
     """비교 기준: 이 실행보다 앞선, 결과가 있는 실행 중 '다른 날짜' 의 마지막 것 (=어제 리포트)."""
     day = run["at"][:10]
@@ -180,7 +194,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render({"page": "create", "report": None, "runs": [],
                                            "form": jira_form.form_meta(refresh=refresh)}))
         if path == "/runs":
-            return self._send(200, render({"page": "runs", "report": None, "runs": _runs_list(store.load_all())}))
+            return self._send(200, render({"page": "runs", "report": None, "runs": _runs_list(store.load_all()),
+                                           "creates": _creates()}))
         if path.startswith("/run/"):
             run = store.load(path[len("/run/"):])
             if not run:
@@ -206,6 +221,15 @@ class Handler(BaseHTTPRequestHandler):
                 result = jira_form.validate(steps)
             except (ValueError, AttributeError) as exc:
                 result = [{"stage": "요청", "level": "bad", "msg": f"요청을 읽지 못했습니다: {exc}"}]
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+        if path == "/action/create":
+            # 실제 Jira 등록 — 쓰기 토큰. 서버가 허용 범위를 다시 확인하고 직전에 Dry-run 을 한 번 더 돈다.
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                steps = json.loads(self.rfile.read(min(n, 200_000)) or b"{}").get("steps") or []
+                result = jira_form.create(steps)
+            except (ValueError, AttributeError) as exc:
+                result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}", "done": []}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
         if path not in ("/action/preview", "/action/send"):
             return self._send(404, b"", "text/plain")

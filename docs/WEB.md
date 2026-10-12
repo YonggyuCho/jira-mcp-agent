@@ -48,6 +48,7 @@ cron (평일 09:00) ─┐
 | `/runs` | 실행 기록 — 자동·웹·수동, 성공·실패, 웹훅 응답, 오류 메시지 |
 | `/run/<날짜>/<파일>` | 특정 실행 하나 |
 | `/create` | **Jira 등록 (데모)** — 상위 선택 + 매번 바뀌는 값만 입력, 고정값은 자동. 보낼 JSON 미리보기. **실제 등록은 안 함** |
+| `POST /action/create` | **실제 등록** — `WEB_CREATE_ENABLED=1` 일 때만. 허용 범위 재확인 + 직전 Dry-run 후 1~4단계 실행 |
 | `POST /action/validate` | 등록 검증 (dry-run) — 읽기 API 로 각 단계 통과 여부 확인, 결과 JSON |
 | `/create?refresh=1` | 등록 양식을 Jira 에서 다시 읽기 (평소 10분 캐시) |
 | `/healthz` | 살아 있는지 (`ok`) |
@@ -143,7 +144,18 @@ sed -i '/^WEB_UI=/d' /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web  
 **쓰기 토큰 확인법 (아무것도 안 만든다):** 그 토큰으로 `POST /issue` 에 `{"fields":{}}` 를 보낸다.
 400(필수값 없음) = 쓰기 범위 있음, 401/403 = 없음. 필수값이 없으니 이슈는 생기지 않는다.
 
-**실제 등록을 켜려면 (다음 단계):** ① 쓰기 토큰을 `.env` 의 `JIRA_API_TOKEN_WRITE` 에 (범위 `write:jira-work` 포함, 2026-10-12 발급·확인 완료) — 리포트용 읽기 토큰과 분리 ② 서버에 `POST /action/create` 를 추가해
+**실제 등록 (2026-10-12 켬) — `POST /action/create`:** `.env` 의 `WEB_CREATE_ENABLED=1` + `JIRA_API_TOKEN_WRITE`.
+- 화면 요청을 그대로 믿지 않는다 — 서버가 다시 확인: 프로젝트 = `AGENT_PROJECT`, 유형 = 양식의 3개, 상위 = 에픽 직속 프로젝트·구축,
+  전환 = 2·3 만, 마지막 PUT 은 Actual start/end·일정 준수·지연 사유 4개 필드만.
+- 보내기 직전 서버가 Dry-run 을 한 번 더 돌리고 실패하면 보내지 않는다.
+- 단계마다 결과를 모아 화면에 보여 준다. 중간 실패면 "일부만 처리됨 — 키는 만들어졌음" 과 어디까지 됐는지.
+- 기록: `runs/creates.jsonl` → 실행 기록 탭의 "Jira 등록 기록".
+- 공용 클라이언트에 `put` 을 추가하지 않았다 (MCP 서버는 읽기 전용 유지) — `request("PUT", …)` 를 등록 코드 안에서만 쓴다.
+- 끄기: `.env` 에서 `WEB_CREATE_ENABLED` 를 비우고 서비스 재시작 → 데모로 돌아간다.
+
+2026-10-12 확인: 꺼진 상태 거부, 에픽 밖 상위·허용 안 된 전환·다른 출처 요청 모두 쓰기 전에 거부, 그사이 생성 0건.
+
+**(지난 계획) 실제 등록을 켜려면:** ① 쓰기 토큰을 `.env` 의 `JIRA_API_TOKEN_WRITE` 에 (범위 `write:jira-work` 포함, 2026-10-12 발급·확인 완료) — 리포트용 읽기 토큰과 분리 ② 서버에 `POST /action/create` 를 추가해
 `POST /rest/api/3/issue` 로 보낸다 (페이로드는 화면의 JSON 그대로) ③ 프로젝트·유형 화이트리스트와 확인 창
 ④ 실행 기록에 남기기. 쓰기는 되돌리기 어려우니 켜기 전에 사용자 확인.
 

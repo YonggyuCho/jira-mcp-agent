@@ -155,6 +155,7 @@ def _build() -> dict:
                                          "delay": options.get(F["delay"], []), "compliance": options.get(F["compliance"], []),
                                          "category": options.get(F["category"], [])},
             "transitions": TRANSITIONS,
+            "create_enabled": create_enabled(),
             "category": {"project_child": collect.PROJECT_CHILD_CATEGORY, "default": collect.EXPECT_CATEGORY,
                          "meeting_kind": collect.MEETING_KIND, "project_kind": collect.PROJECT_KIND},
             "fields": F, "basis": len(rows),
@@ -341,3 +342,97 @@ def validate(steps: list[dict]) -> list[dict]:
 def dt_today():
     import datetime as _dt
     return _dt.date.today()
+
+
+# ── 실제 등록 ──────────────────────────────────────────────────────────────
+# 화면이 보낸 단계를 그대로 믿지 않는다. 서버가 허용 범위를 다시 확인하고, 직전에 Dry-run 을 한 번 더 돌린다.
+# 쓰기 토큰(JIRA_API_TOKEN_WRITE)은 여기서만 쓴다. .env 의 WEB_CREATE_ENABLED=1 일 때만 동작한다.
+
+PUT_ALLOWED = {F["actual_start"], F["actual_end"], F["compliance"], F["delay"]}
+
+
+def create_enabled() -> bool:
+    return os.environ.get("WEB_CREATE_ENABLED", "").strip() == "1" and bool(os.environ.get("JIRA_API_TOKEN_WRITE", "").strip())
+
+
+def _write_client():
+    import dataclasses
+    return client.JiraClient(dataclasses.replace(config.load(), token=os.environ["JIRA_API_TOKEN_WRITE"].strip()))
+
+
+def _check_scope(steps: list[dict], meta: dict) -> str | None:
+    """허용 범위 밖이면 이유를 돌려준다."""
+    if not steps or steps[0].get("step") != 1 or steps[0].get("method") != "POST":
+        return "1단계(등록)가 없습니다"
+    f = (steps[0].get("body") or {}).get("fields") or {}
+    if (f.get("project") or {}).get("key") != meta["project"]:
+        return "다른 프로젝트에는 등록할 수 없습니다"
+    if str((f.get("issuetype") or {}).get("id")) not in set(meta["types"].values()):
+        return "허용되지 않은 유형입니다"
+    if (f.get("parent") or {}).get("key") not in {p["key"] for p in meta["parents"]}:
+        return "허용되지 않은 상위입니다 (에픽 직속 프로젝트·구축만)"
+    for s in steps[1:]:
+        tid = ((s.get("body") or {}).get("transition") or {}).get("id")
+        if s.get("method") == "POST" and tid not in TRANSITIONS.values():
+            return f"허용되지 않은 전환입니다: {tid}"
+        if s.get("method") == "PUT" and set(((s.get("body") or {}).get("fields") or {})) - PUT_ALLOWED:
+            return "마지막 단계에서 바꿀 수 없는 필드가 있습니다"
+        if s.get("method") not in ("POST", "PUT"):
+            return "알 수 없는 단계입니다"
+    return None
+
+
+def _log(entry: dict) -> None:
+    """등록 기록 — runs/creates.jsonl (이슈 키·제목이 있어 공개 저장소에 안 올라간다)."""
+    import json
+    from agent import store
+    store.RUNS.mkdir(parents=True, exist_ok=True)
+    with open(store.RUNS / "creates.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def create(steps: list[dict]) -> dict:
+    """결과: {ok, key, url, done:[단계 설명], error, dry:[검증 결과]}"""
+    import datetime as _dt
+    started = _dt.datetime.now().isoformat(timespec="seconds")
+    result: dict = {"ok": False, "key": None, "url": None, "done": [], "error": None, "at": started}
+    if not create_enabled():
+        result["error"] = "실제 등록이 꺼져 있습니다 (WEB_CREATE_ENABLED)"
+        return result
+    meta = form_meta()
+    if not meta.get("ok"):
+        result["error"] = f"양식 데이터를 못 읽었습니다: {meta.get('error')}"
+        return result
+    why = _check_scope(steps, meta)
+    if why:
+        result["error"] = why
+        return result
+    dry = validate(steps)
+    result["dry"] = dry
+    if any(x["level"] == "bad" for x in dry):
+        result["error"] = "Dry-run 실패 — 보내지 않았습니다"
+        return result
+
+    c = _write_client()
+    site = config.load().site
+    try:
+        created = c.post("/issue", json=steps[0]["body"])
+        key = created.get("key")
+        result.update(key=key, url=f"{site}/browse/{key}")
+        result["done"].append(f"1. 등록 → {key}")
+        for s in steps[1:]:
+            path = s["path"].replace("{키}", key)
+            if s["method"] == "POST":
+                c.post(path.replace("/rest/api/3", ""), json=s["body"])
+            else:
+                c.request("PUT", path.replace("/rest/api/3", ""), json=s["body"])  # 공용 클라이언트에 put 을 안 늘린다 (MCP 는 읽기 전용)
+            result["done"].append(f"{s['step']}. {s.get('what', '')}")
+        result["ok"] = True
+    except client.JiraError as exc:
+        result["error"] = f"{len(result['done']) + 1}단계에서 실패: {str(exc)[:300]}"
+    finally:
+        c.close()
+        title = ((steps[0].get("body") or {}).get("fields") or {}).get("summary")
+        _log({**{k: v for k, v in result.items() if k != "dry"}, "title": title,
+              "steps": [s.get("what") for s in steps]})
+    return result
