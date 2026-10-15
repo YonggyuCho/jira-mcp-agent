@@ -71,6 +71,23 @@ def list_comments(key: str, limit: int = 30) -> dict:
         c.close()
 
 
+URL = re.compile(r"https?://[^\s<>\"]+")
+
+
+def _inline(line: str) -> list[dict]:
+    """한 줄 → text 노드. 주소는 링크로 만든다 — API 로 넣은 글은 Jira 가 자동으로 링크를 걸지 않는다."""
+    out, pos = [], 0
+    for m in URL.finditer(line):
+        url = m.group(0).rstrip(".,)")
+        if m.start() > pos:
+            out.append({"type": "text", "text": line[pos:m.start()]})
+        out.append({"type": "text", "text": url, "marks": [{"type": "link", "attrs": {"href": url}}]})
+        pos = m.start() + len(url)
+    if pos < len(line):
+        out.append({"type": "text", "text": line[pos:]})
+    return out
+
+
 def _body(text: str) -> dict:
     """평문 → ADF. 빈 줄로 문단을 나누고, 문단 안 줄바꿈은 hardBreak."""
     paras = []
@@ -79,8 +96,7 @@ def _body(text: str) -> dict:
         for i, line in enumerate(block.split("\n")):
             if i:
                 content.append({"type": "hardBreak"})
-            if line:
-                content.append({"type": "text", "text": line})
+            content += _inline(line)
         paras.append({"type": "paragraph", "content": content})
     return {"type": "doc", "version": 1, "content": paras}
 

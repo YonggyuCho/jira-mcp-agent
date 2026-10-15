@@ -604,12 +604,13 @@ function cmMode(step){
   $("#cm-send").textContent = confirm ? "달기" : busy ? "다는 중…" : "댓글 달기";
   $("#cm-close").textContent = confirm ? "돌아가기" : "닫기";
 }
+const linkify = t => esc(t).replace(/https?:\/\/[^\s<>"]+/g, u=>{ const v = u.replace(/[.,)]+$/,""); return `<a href="${v}" target="_blank" rel="noopener">${v}</a>${u.slice(v.length)}`; });
 function cmRender(res){
   if(!res.ok){ $("#cm-list").innerHTML = `<div class="cempty" style="color:var(--risk)">${esc(res.error||"댓글을 읽지 못했습니다")}</div>`; CM.enabled=false; cmMode("edit"); return; }
   $("#cm-title").textContent = res.title || "";
   CM.enabled = !!res.enabled; CM.author = res.author || "";
   $("#cm-list").innerHTML = res.comments.length
-    ? res.comments.map(c=>`<div class="citem"><div class="cm"><b>${esc(c.author)}</b> · ${esc(c.at)}</div><div class="cx">${esc(c.text)}</div></div>`).join("")
+    ? res.comments.map(c=>`<div class="citem"><div class="cm"><b>${esc(c.author)}</b> · ${esc(c.at)}</div><div class="cx">${linkify(c.text)}</div></div>`).join("")
       + (res.total > res.comments.length ? `<div class="cempty">최근 ${res.comments.length}개만 보입니다 (전체 ${res.total}개) — 나머지는 Jira 에서</div>` : "")
     : `<div class="cempty">아직 댓글이 없습니다.</div>`;
   $("#cm-note").textContent = CM.enabled
