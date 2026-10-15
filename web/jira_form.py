@@ -222,6 +222,35 @@ def _sample(c, project: str, type_id: str, cat: str) -> str | None:
     return iss[0]["key"] if iss else None
 
 
+def _stage(s: dict) -> str:
+    """화면에 보일 단계 이름."""
+    tid = ((s.get("body") or {}).get("transition") or {}).get("id")
+    if tid == TRANSITIONS["start"]:
+        what = "진행 중으로 바꾸기"
+    elif tid == TRANSITIONS["close"]:
+        what = "종료로 바꾸기"
+    elif s.get("method") == "PUT":
+        what = "실제 시작·종료 시각 다시 넣기"
+    else:
+        what = "이슈 만들기"
+    return f"{s.get('step')}. {what}"
+
+
+def _same_flow_sample(c, project: str, type_id: str, cat: str) -> tuple[str | None, str]:
+    """같은 유형에 표본이 없을 때, 상태 목록이 완전히 같은 다른 등록 유형에서 표본을 찾는다.
+    회의는 대부분 바로 종료돼 진행 전·진행 중 표본이 거의 없다 (2026-10-12 실측: 0건)."""
+    flows = {t["id"]: (t["name"], sorted(x["name"] for x in t["statuses"]))
+             for t in c.get(f"/project/{project}/statuses")}
+    mine = flows.get(type_id, (None, None))[1]
+    names = {v: k for k, v in form_meta()["types"].items()}
+    for tid, (_, sts) in flows.items():
+        if tid != type_id and tid in names and sts == mine:
+            key = _sample(c, project, tid, cat)
+            if key:
+                return key, names[tid]
+    return None, ""
+
+
 def validate(steps: list[dict]) -> list[dict]:
     """steps = 화면이 만든 단계별 요청. 결과: [{stage, level(ok/warn/bad), msg}]"""
     out: list[dict] = []
@@ -236,6 +265,7 @@ def validate(steps: list[dict]) -> list[dict]:
         if not create:
             return [{"stage": "준비", "level": "bad", "msg": "1단계(등록) 요청이 없습니다"}]
         fields = (create.get("body") or {}).get("fields") or {}
+        s1 = _stage(create)
         type_id = str((fields.get("issuetype") or {}).get("id") or "")
         project = (fields.get("project") or {}).get("key") or meta["project"]
 
@@ -245,12 +275,13 @@ def validate(steps: list[dict]) -> list[dict]:
         names = {k: v.get("name", k) for k, v in screen.items()}
         unknown = [k for k in fields if k not in screen]
         if unknown:
-            add("1. 등록", "bad", f"등록 화면에 없는 필드: {', '.join(unknown)} — Jira 가 거부한다")
+            add(s1, "bad", f"Jira 등록 화면에 없는 칸이 들어 있음: {', '.join(unknown)}")
         missing = [names[k] for k, f in screen.items()
                    if f.get("required") and not f.get("hasDefaultValue") and k not in ("project", "issuetype")
                    and fields.get(k) in (None, "", [], {})]
-        add("1. 등록", "bad" if missing else "ok",
-            f"필수 필드 비어 있음: {', '.join(missing)}" if missing else f"필수 필드 {sum(1 for f in screen.values() if f.get('required'))}개 모두 채움")
+        add(s1, "bad" if missing else "ok",
+            f"필수 칸이 비어 있음: {', '.join(missing)}" if missing
+            else f"필수 칸 {sum(1 for f in screen.values() if f.get('required'))}개 모두 채움")
         bad_opts = []
         for k, v in fields.items():
             allowed = [a.get("value") or a.get("name") for a in (screen.get(k, {}).get("allowedValues") or [])]
@@ -258,8 +289,8 @@ def validate(steps: list[dict]) -> list[dict]:
                 continue
             vals = [x.get("value") or x.get("name") for x in (v if isinstance(v, list) else [v]) if isinstance(x, dict)]
             bad_opts += [f"{names.get(k, k)}='{x}'" for x in vals if x not in allowed]
-        add("1. 등록", "bad" if bad_opts else "ok",
-            f"허용되지 않는 선택값: {', '.join(bad_opts)}" if bad_opts else "선택값이 모두 허용 목록 안에 있음")
+        add(s1, "bad" if bad_opts else "ok",
+            f"Jira 가 받지 않는 선택값: {', '.join(bad_opts)}" if bad_opts else "선택값 모두 Jira 허용 목록 안")
 
         # 사람: 배정 가능한지
         people = []
@@ -268,14 +299,19 @@ def validate(steps: list[dict]) -> list[dict]:
         for fk, label in ((F["engineer"], "엔지니어"), (F["cc"], "참조")):
             people += [(label, u.get("accountId")) for u in fields.get(fk) or [] if u.get("accountId")]
         name = {p["id"]: p["name"] for p in meta["people"]}
+        ok_people = []
         for label, aid in people:
             try:
                 found = c.get("/user/assignable/search", params={"project": project, "accountId": aid})
                 ok = any(u.get("accountId") == aid and u.get("active", True) for u in (found or []))
             except client.JiraError:
                 ok = False
-            add("1. 등록", "ok" if ok else "bad",
-                f"{label} {name.get(aid, aid)}: " + ("이 프로젝트에 배정 가능" if ok else "배정 불가 또는 비활성 계정"))
+            if ok:
+                ok_people.append(f"{label} {name.get(aid, aid)}")
+            else:
+                add(s1, "bad", f"{label} {name.get(aid, aid)}: 이 프로젝트에 배정할 수 없거나 비활성 계정")
+        if ok_people:
+            add(s1, "ok", f"사람 {len(ok_people)}명 배정 가능 — {', '.join(ok_people)}")
 
         # 상위
         pk = (fields.get("parent") or {}).get("key")
@@ -283,32 +319,40 @@ def validate(steps: list[dict]) -> list[dict]:
             try:
                 pf = c.get(f"/issue/{pk}", params={"fields": "issuetype,status,project"})["fields"]
                 if pf["issuetype"].get("subtask"):
-                    add("1. 등록", "bad", f"상위 {pk} 가 하위 유형이라 그 아래에 만들 수 없음")
+                    add(s1, "bad", f"상위 {pk} 가 하위 유형이라 그 아래에 만들 수 없음")
                 elif pf["project"]["key"] != project:
-                    add("1. 등록", "bad", f"상위 {pk} 가 다른 프로젝트")
+                    add(s1, "bad", f"상위 {pk} 가 다른 프로젝트")
                 else:
-                    add("1. 등록", "ok", f"상위 {pk} ({pf['issuetype']['name']}, {pf['status']['name']}) 확인")
+                    add(s1, "ok", f"상위 {pk} 있음 ({pf['issuetype']['name']}, {pf['status']['name']})")
             except client.JiraError:
-                add("1. 등록", "bad", f"상위 {pk} 를 찾을 수 없음")
+                add(s1, "bad", f"상위 {pk} 를 찾을 수 없음")
 
         # ── 2·3. 전환 ───────────────────────────────────────────────────
         for s in steps:
             tid = ((s.get("body") or {}).get("transition") or {}).get("id")
             if not tid:
                 continue
+            # Jira 에는 전환을 미리 시험하는 API 가 없다. 같은 상태에 있는 다른 이슈에서
+            # '지금 할 수 있는 전환' 을 조회해 이 전환이 있는지, 전환 때 따로 묻는 칸이 있는지 본다.
             cat = "new" if tid == TRANSITIONS["start"] else "indeterminate"
-            key = _sample(c, project, type_id, cat)
+            state = "진행 전" if cat == "new" else "진행 중"
+            key, via = _sample(c, project, type_id, cat), ""
             if not key:
-                add(f"{s['step']}. 전환", "warn", f"같은 유형의 표본 이슈가 없어 전환 {tid} 를 확인하지 못함")
+                key, other = _same_flow_sample(c, project, type_id, cat)
+                via = f" · {state}인 같은 유형이 없어, 상태 흐름이 같은 '{other}' {key} 로 확인" if key else ""
+            if not key:
+                add(_stage(s), "warn", f"미리 확인 못 함 — {state}인 이슈가 없음. "
+                                       "실패하면 이슈는 만들어진 채 멈추니 Jira 에서 직접 바꾸면 됨")
                 continue
             tr = c.get(f"/issue/{key}/transitions", params={"expand": "transitions.fields"}).get("transitions", [])
             hit = next((t for t in tr if t["id"] == tid), None)
             if not hit:
-                add(f"{s['step']}. 전환", "bad", f"전환 id {tid} 가 없음 (표본 {key} 기준) — 워크플로가 바뀌었을 수 있음")
+                add(_stage(s), "bad", f"전환(id {tid})이 없음 — Jira 워크플로가 바뀌었을 수 있음 (표본 {key})")
                 continue
             req = [v.get("name") for v in (hit.get("fields") or {}).values() if v.get("required")]
-            add(f"{s['step']}. 전환", "bad" if req else "ok",
-                f"'{hit['name']}' → {hit['to']['name']}" + (f" — 전환 때 필수 입력: {', '.join(req)}" if req else " (묻는 필드 없음, 표본 " + key + ")"))
+            add(_stage(s), "bad" if req else "ok",
+                f"'{hit['name']}' 전환 가능 → {hit['to']['name']}"
+                + (f" — 전환 때 필수 입력: {', '.join(req)}" if req else (via or f" (표본 {key})")))
 
         # ── 4. 값 다시 넣기 (수정 화면) ─────────────────────────────────
         put = next((s for s in steps if s.get("method") == "PUT"), None)
@@ -317,18 +361,19 @@ def validate(steps: list[dict]) -> list[dict]:
                                   for s in steps) else "indeterminate"
             key = _sample(c, project, type_id, final)
             if not key:
-                add(f"{put['step']}. 수정", "warn", "같은 상태의 표본 이슈가 없어 수정 가능 여부를 확인하지 못함")
+                add(_stage(put), "warn", "미리 확인 못 함 — 같은 상태의 이슈가 없음")
             else:
                 em = c.get(f"/issue/{key}/editmeta").get("fields", {})
                 want = list(((put.get("body") or {}).get("fields") or {}).keys())
                 miss = [names.get(k, k) for k in want if k not in em]
-                add(f"{put['step']}. 수정", "bad" if miss else "ok",
-                    f"{'종료' if final == 'done' else '진행 중'} 상태에서 수정 못 하는 필드: {', '.join(miss)} (표본 {key})"
-                    if miss else f"{'종료' if final == 'done' else '진행 중'} 상태에서도 {len(want)}개 필드 수정 가능 (표본 {key})")
+                state = '종료' if final == 'done' else '진행 중'
+                add(_stage(put), "bad" if miss else "ok",
+                    f"{state} 상태에서 고칠 수 없는 칸: {', '.join(miss)} (표본 {key})" if miss
+                    else f"{state} 상태에서도 고칠 수 있음 — {', '.join(names.get(k, k) for k in want)} (표본 {key})")
                 for k, v in ((put.get("body") or {}).get("fields") or {}).items():
                     allowed = [a.get("value") for a in (em.get(k, {}).get("allowedValues") or [])]
                     if allowed and isinstance(v, dict) and v.get("value") not in allowed:
-                        add(f"{put['step']}. 수정", "bad", f"{names.get(k, k)}='{v.get('value')}' 허용 안 됨")
+                        add(_stage(put), "bad", f"{names.get(k, k)}='{v.get('value')}' 는 Jira 가 받지 않음")
 
         # ── 리포트 미리 판정 ─────────────────────────────────────────────
         merged = dict(fields)
@@ -359,10 +404,10 @@ def validate(steps: list[dict]) -> list[dict]:
         found = collect._judge([issue], dt_today(), 3, project_parents, skipped)
         if found:
             for f in found:
-                add("리포트 미리 판정", "warn", f"내일 리포트에 {'위험으로' if f.category == collect.RISK else '불일치로'} 잡힘: {f.reason}")
+                add("매일 점검 미리보기", "warn", f"등록하면 내일 리포트에 {'위험' if f.category == collect.RISK else '불일치'}으로 잡힘 — {f.reason}")
         else:
             note = " (진행 중 Not Evaluated 는 제외 규칙 대상)" if skipped else ""
-            add("리포트 미리 판정", "ok", f"등록 후 상태 '{issue.status}' 기준, 매일 리포트에 걸리지 않음{note}")
+            add("매일 점검 미리보기", "ok", f"등록 뒤 '{issue.status}' 상태 기준으로 위험·불일치 없음{note}")
         return out
     except client.JiraError as exc:
         return out + [{"stage": "Jira", "level": "bad", "msg": f"Jira 조회 실패: {str(exc)[:200]}"}]
