@@ -274,6 +274,19 @@ pre.payload{margin:0;max-height:360px;overflow:auto;background:var(--surface-2);
 .vstep b{display:block;font-weight:600}.vstep .vm{color:var(--text-2);font-size:12px;margin-top:2px}
 .vstep .vm.warn{color:var(--mis)}.vstep .vm.bad{color:var(--risk)}
 .dlg p.vfoot{margin-top:12px;font-size:12px}
+.cbtn{margin-left:6px;padding:0 4px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;line-height:20px;vertical-align:1px}
+.cbtn:hover{border-color:var(--accent)}
+dialog#cdlg{width:min(600px,calc(100vw - 32px))}
+.chead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.chead h3{margin:0}.chead .ct{font-size:13px;color:var(--text-2);flex:1;min-width:0}
+.clist{margin:12px 0;max-height:42vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.citem{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
+.citem .cm{font-size:12px;color:var(--text-2);margin-bottom:4px}.citem .cm b{color:var(--text);font-weight:600}
+.citem .cx{white-space:pre-wrap;word-break:break-word}
+.cempty{font-size:13px;color:var(--text-3);padding:8px 0}
+#c-text{width:100%;min-height:96px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;resize:vertical}
+.cnote{font-size:12px;color:var(--text-2);margin-top:6px}
+.cconfirm{margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--mis);font-size:13px}
+.cres{margin-top:10px;font-size:13px}.cres.ok{color:var(--ok)}.cres.err{color:var(--risk)}
 .vsum{font-size:13px;font-weight:700;margin-bottom:8px}
 .cactions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 @media (max-width:980px){.cgrid{grid-template-columns:1fr}.side-stack{position:static}.fgrid{grid-template-columns:1fr}}
@@ -419,6 +432,16 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div class="row"><button class="btn" value="cancel" id="v-cancel">취소</button><button class="btn primary" value="ok" id="v-ok">등록</button></div>
 </form></dialog>
 
+<dialog id="cdlg"><div class="dlg">
+  <div class="chead"><h3 id="cm-key"></h3><span class="ct" id="cm-title"></span><a id="cm-open" target="_blank" rel="noopener" style="font-size:12px">Jira 에서 열기</a></div>
+  <div class="clist" id="cm-list"></div>
+  <textarea id="c-text" placeholder="댓글 내용 (빈 줄로 문단 구분)"></textarea>
+  <div class="cnote" id="cm-note"></div>
+  <div class="cconfirm" id="cm-confirm" hidden></div>
+  <div class="cres" id="cm-res"></div>
+  <div class="row"><button class="btn" type="button" id="cm-close">닫기</button><button class="btn primary" type="button" id="cm-send">댓글 달기</button></div>
+</div></dialog>
+
 <dialog id="dlg"><form method="dialog" class="dlg">
   <h3>지금 Teams 로 발송할까요?</h3>
   <p>Jira 를 새로 읽은 뒤 결과를 Teams 로 보냅니다.</p>
@@ -467,7 +490,8 @@ function cell(c, r){
     case "verdict": return `<div class="badges">${r.verdict.map(v=>`<span class="badge ${VCLS[v]}">${v}</span>`).join("")}</div>`;
     case "epic": return esc(r.epic);
     case "project": return esc(r.project);
-    case "key": return `${r.new?"🆕 ":""}<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.key)}</a>`;
+    case "key": return `${r.new?"🆕 ":""}<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.key)}</a>`
+      + (PAGE==="today" ? `<button class="cbtn" type="button" data-c="${esc(r.key)}" title="댓글 보기·달기" aria-label="${esc(r.key)} 댓글">💬</button>` : "");
     case "title": return esc(r.title);
     case "kind": { const m = r.kind.match(/^(.+?)(\(.+\))$/); return m ? `${esc(m[1])}<span class="kind-sub">${esc(m[2])}</span>` : esc(r.kind); }
     case "status": return `<span class="st ${r.status==="종료"?"done":""}">${esc(r.status)}</span>`;
@@ -568,7 +592,72 @@ $("#frow").addEventListener("click", e=>{
   const b = e.target.closest(".fbtn"); if(!b) return;
   e.stopPropagation(); openPop(b.dataset.f, b);
 });
+/* ===== 댓글 (오늘 페이지) — 보기는 읽기 토큰, 달기는 쓰기 토큰. 달기 전에 한 번 더 확인한다. @ 알림 없음 ===== */
+const CM = {key:null, step:"edit", enabled:false, author:""};
+function cmMode(step){
+  CM.step = step;
+  const confirm = step==="confirm", busy = step==="busy";
+  $("#cm-confirm").hidden = !confirm;
+  $("#c-text").disabled = confirm || busy || !CM.enabled;
+  $("#cm-send").hidden = !CM.enabled;
+  $("#cm-send").disabled = busy;
+  $("#cm-send").textContent = confirm ? "달기" : busy ? "다는 중…" : "댓글 달기";
+  $("#cm-close").textContent = confirm ? "돌아가기" : "닫기";
+}
+function cmRender(res){
+  if(!res.ok){ $("#cm-list").innerHTML = `<div class="cempty" style="color:var(--risk)">${esc(res.error||"댓글을 읽지 못했습니다")}</div>`; CM.enabled=false; cmMode("edit"); return; }
+  $("#cm-title").textContent = res.title || "";
+  CM.enabled = !!res.enabled; CM.author = res.author || "";
+  $("#cm-list").innerHTML = res.comments.length
+    ? res.comments.map(c=>`<div class="citem"><div class="cm"><b>${esc(c.author)}</b> · ${esc(c.at)}</div><div class="cx">${esc(c.text)}</div></div>`).join("")
+      + (res.total > res.comments.length ? `<div class="cempty">최근 ${res.comments.length}개만 보입니다 (전체 ${res.total}개) — 나머지는 Jira 에서</div>` : "")
+    : `<div class="cempty">아직 댓글이 없습니다.</div>`;
+  $("#cm-note").textContent = CM.enabled
+    ? `작성자: ${CM.author||"토큰 계정"} 이름으로 달립니다 · @ 알림 없음 · 수정·삭제는 Jira 에서`
+    : "댓글 달기가 꺼져 있어 보기만 됩니다.";
+  cmMode("edit");
+}
+async function cmLoad(){
+  $("#cm-list").innerHTML = `<div class="cempty"><span class="spin"></span> Jira 에서 댓글을 읽는 중…</div>`;
+  try{ const r = await fetch("/comments?key="+encodeURIComponent(CM.key)); cmRender(await r.json()); }
+  catch(e){ cmRender({ok:false, error:"댓글을 읽지 못했습니다: "+e.message}); }
+}
+function openComments(key){
+  const row = REPORT.rows.find(r=>r.key===key) || {};
+  CM.key = key; CM.enabled = false;
+  $("#cm-key").textContent = key; $("#cm-title").textContent = row.title || "";
+  $("#cm-open").href = row.url || "#"; $("#c-text").value = ""; $("#cm-res").textContent = ""; $("#cm-res").className = "cres";
+  $("#cm-note").textContent = ""; cmMode("edit"); $("#cm-send").hidden = true;
+  $("#cdlg").showModal(); cmLoad();
+}
+$("#cm-close").addEventListener("click", ()=>{ CM.step==="confirm" ? cmMode("edit") : $("#cdlg").close(); });
+$("#cm-send").addEventListener("click", async ()=>{
+  const text = $("#c-text").value.trim();
+  if(CM.step==="edit"){
+    if(!text){ $("#cm-res").className="cres err"; $("#cm-res").textContent = "댓글 내용을 입력하세요."; return; }
+    $("#cm-res").textContent = "";
+    $("#cm-confirm").innerHTML = `<b>${esc(CM.key)}</b> 에 위 댓글을 ${esc(CM.author||"토큰 계정")} 이름으로 답니다. Jira 에 바로 올라가고 웹에서는 지울 수 없습니다. 달까요?`;
+    cmMode("confirm"); return;
+  }
+  if(CM.step!=="confirm") return;
+  cmMode("busy");
+  try{
+    const r = await fetch("/action/comment", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({key:CM.key, text})});
+    const res = await r.json();
+    if(res.ok){
+      $("#c-text").value = "";
+      await cmLoad();
+      $("#cm-res").className = "cres ok"; $("#cm-res").innerHTML = `✓ 댓글을 달았습니다 — <a href="${esc(res.url)}" target="_blank" rel="noopener">Jira 에서 보기</a>`;
+    } else {
+      $("#cm-res").className = "cres err"; $("#cm-res").textContent = "✕ " + (res.error||"댓글을 달지 못했습니다"); cmMode("edit");
+    }
+  }catch(e){
+    $("#cm-res").className = "cres err"; $("#cm-res").textContent = "✕ 응답을 받지 못했습니다 — Jira 에 달렸을 수 있으니 목록을 새로 확인하세요."; cmMode("edit"); cmLoad();
+  }
+});
+
 $("#tbody").addEventListener("click", e=>{
+  const cb = e.target.closest(".cbtn"); if(cb){ e.stopPropagation(); openComments(cb.dataset.c); return; }
   const g = e.target.closest("tr.grp"); if(!g) return;
   const n = g.dataset.g; state.closed.has(n) ? state.closed.delete(n) : state.closed.add(n); renderBody();
 });

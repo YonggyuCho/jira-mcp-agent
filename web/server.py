@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from agent import store
 
-from . import jira_form
+from . import jira_comment, jira_form
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "app.html"
@@ -202,6 +202,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, render({"page": "run", "report": None, "runs": [],
                                                "empty_title": "기록을 찾을 수 없습니다", "empty_meta": ""}))
             return self._send(200, render(run_data(run)))
+        if path == "/comments":
+            # 이슈 댓글 보기 (읽기 토큰). 서버가 GPU Live 이슈인지 다시 확인한다.
+            key = (parse_qs(url.query).get("key") or [""])[0].strip().upper()
+            return self._send(200, json.dumps(jira_comment.list_comments(key), ensure_ascii=False).encode(),
+                              "application/json; charset=utf-8")
         if path == "/healthz":
             return self._send(200, b"ok", "text/plain")
         return self._send(404, b"not found", "text/plain")
@@ -230,6 +235,15 @@ class Handler(BaseHTTPRequestHandler):
                 result = jira_form.create(steps)
             except (ValueError, AttributeError) as exc:
                 result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}", "done": []}
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+        if path == "/action/comment":
+            # 댓글 달기 — 쓰기 토큰. 허용 범위(프로젝트·솔루션)는 서버가 다시 확인한다. @ 알림 없음.
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(min(n, 50_000)) or b"{}")
+                result = jira_comment.add_comment(str(body.get("key") or "").strip().upper(), str(body.get("text") or ""))
+            except (ValueError, AttributeError) as exc:
+                result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}"}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
         if path not in ("/action/preview", "/action/send"):
             return self._send(404, b"", "text/plain")
