@@ -1,4 +1,4 @@
-"""오늘 페이지의 '댓글' — 이슈 댓글 보기(읽기 토큰)와 달기(쓰기 토큰).
+"""현황 페이지의 '댓글' — 이슈 댓글 보기(읽기 토큰)와 달기(쓰기 토큰).
 
 허용 범위는 서버가 다시 확인한다: 프로젝트 = AGENT_PROJECT 이고, 솔루션에 AGENT_SOLUTION 이 들어 있거나
 가장 최근 리포트 표에 나온 이슈만.
@@ -27,7 +27,7 @@ def enabled() -> bool:
 
 
 def _table_keys() -> set[str]:
-    """가장 최근 리포트(오늘 페이지 표)에 나온 이슈 키."""
+    """가장 최근 리포트(현황 페이지 표)에 나온 이슈 키."""
     from agent import store
     latest = next((r for r in store.load_all() if r.get("report")), None)
     return {row["issue"]["key"] for row in (latest or {}).get("report", {}).get("rows", [])}
@@ -44,7 +44,7 @@ def _in_scope(c, key: str) -> tuple[bool, str, str]:
     except client.JiraError:
         return False, "이슈를 찾을 수 없습니다", ""
     sols = [x.get("value") for x in f.get(SOLUTION_FIELD) or [] if isinstance(x, dict)]
-    # 오늘 표에 나온 이슈도 허용 — 에픽 아래인데 솔루션이 틀린 이슈(불일치)에 "고쳐 달라" 고 다는 경우
+    # 현황 표에 나온 이슈도 허용 — 에픽 아래인데 솔루션이 틀린 이슈(불일치)에 "고쳐 달라" 고 다는 경우
     if f["project"]["key"] == project and key in _table_keys():
         return True, "", f.get("summary") or ""
     if f["project"]["key"] != project or solution not in sols:

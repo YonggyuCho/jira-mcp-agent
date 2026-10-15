@@ -326,7 +326,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 
 <header class="topbar"><div class="topbar-in">
   <div class="brand">GPU Live JIRA 에이전트</div>
-  <nav class="tabs"><a class="tab" id="tab-today" href="/">오늘</a><a class="tab" id="tab-runs" href="/runs">실행 기록</a><a class="tab" id="tab-create" href="/create">Jira 등록</a></nav>
+  <nav class="tabs"><a class="tab" id="tab-today" href="/">현황</a><a class="tab" id="tab-runs" href="/runs">실행 기록</a><a class="tab" id="tab-create" href="/create">Jira 등록</a></nav>
 </div></header>
 
 <main class="wrap" id="page-today">
@@ -592,7 +592,7 @@ $("#frow").addEventListener("click", e=>{
   const b = e.target.closest(".fbtn"); if(!b) return;
   e.stopPropagation(); openPop(b.dataset.f, b);
 });
-/* ===== 댓글 (오늘 페이지) — 보기는 읽기 토큰, 달기는 쓰기 토큰. 달기 전에 한 번 더 확인한다. @ 알림 없음 ===== */
+/* ===== 댓글 (현황 페이지) — 보기는 읽기 토큰, 달기는 쓰기 토큰. 달기 전에 한 번 더 확인한다. @ 알림 없음 ===== */
 const CM = {key:null, step:"edit", enabled:false, author:""};
 function cmMode(step){
   CM.step = step;
