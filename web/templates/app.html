@@ -286,6 +286,10 @@ dialog#cdlg{width:min(600px,calc(100vw - 32px))}
 #c-text{width:100%;min-height:96px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;resize:vertical}
 .cnote{font-size:12px;color:var(--text-2);margin-top:6px}
 .cconfirm{margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--mis);font-size:13px}
+.pstrip{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pimg{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--text-2)}
+.pimg img{width:88px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)}
+.pimg button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);cursor:pointer;line-height:16px;font-size:13px;padding:0}
 .cres{margin-top:10px;font-size:13px}.cres.ok{color:var(--ok)}.cres.err{color:var(--risk)}
 .vsum{font-size:13px;font-weight:700;margin-bottom:8px}
 .cactions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
@@ -406,7 +410,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
           <div class="fld only-close"><label class="lb" for="c-comp">일정 준수 여부<span class="req">*</span><span class="hintx" id="c-comp-hint"></span></label><select id="c-comp"></select></div>
           <div class="fld only-close only-delayed full"><label class="lb" for="c-delay">지연 사유<span class="req">*</span></label><select id="c-delay"></select></div>
           <div class="fld full"><label class="lb" id="c-eng-label">엔지니어<span class="req">*</span></label><div class="pills" id="c-eng"></div></div>
-          <div class="fld full"><label class="lb" for="c-desc">설명<span class="req">*</span><span class="hintx">비어 있으면 매일 리포트에서 '위험(미기입)' 으로 잡힌다</span></label><textarea id="c-desc" placeholder="요청 내용, 작업 범위, 참고 링크"></textarea></div>
+          <div class="fld full"><label class="lb" for="c-desc">설명<span class="req">*</span><span class="hintx">비어 있으면 매일 리포트에서 '위험(미기입)' 으로 잡힌다</span></label><textarea id="c-desc" placeholder="요청 내용, 작업 범위, 참고 링크 · 캡처한 사진은 Ctrl+V 로 붙여넣기"></textarea><div class="pstrip" id="c-imgs" hidden></div></div>
         </div>
         <div class="cactions"><button class="btn" type="button" id="c-reset">초기화</button><button class="btn primary" type="button" id="c-submit"><span class="spin"></span>등록 (데모)</button></div>
       </div>
@@ -435,7 +439,8 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 <dialog id="cdlg"><div class="dlg">
   <div class="chead"><h3 id="cm-key"></h3><span class="ct" id="cm-title"></span><a id="cm-open" target="_blank" rel="noopener" style="font-size:12px">Jira 에서 열기</a></div>
   <div class="clist" id="cm-list"></div>
-  <textarea id="c-text" placeholder="댓글 내용 (빈 줄로 문단 구분)"></textarea>
+  <textarea id="c-text" placeholder="댓글 내용 (빈 줄로 문단 구분) · 캡처한 사진은 Ctrl+V 로 붙여넣기"></textarea>
+  <div class="pstrip" id="cm-imgs" hidden></div>
   <div class="cnote" id="cm-note"></div>
   <div class="cconfirm" id="cm-confirm" hidden></div>
   <div class="cres" id="cm-res"></div>
@@ -592,8 +597,42 @@ $("#frow").addEventListener("click", e=>{
   const b = e.target.closest(".fbtn"); if(!b) return;
   e.stopPropagation(); openPop(b.dataset.f, b);
 });
+/* ===== 사진 붙여넣기 (댓글·설명) — 글 속 커서 자리에 [사진 n] 을 넣고 아래에 미리보기.
+   보낼 때 서버가 그 이슈의 첨부로 올리고 [사진 n] 자리에 보이게 넣는다 (web/jira_media.py). ===== */
+const PASTE_MAX = 5, PASTE_BYTES = 10*1024*1024;
+function makePaster(ta, strip){
+  const P = {items:[], next:1};
+  const draw = ()=>{ strip.innerHTML = P.items.map(i=>`<span class="pimg"><img src="${i.url}" alt=""><span>[사진 ${i.n}]</span><button type="button" data-n="${i.n}" title="이 사진 빼기">×</button></span>`).join(""); strip.hidden = !P.items.length; };
+  ta.addEventListener("paste", e=>{
+    const files = [...((e.clipboardData && e.clipboardData.items) || [])]
+      .filter(x=>x.kind==="file" && /^image\/(png|jpeg|gif)$/.test(x.type)).map(x=>x.getAsFile()).filter(Boolean);
+    if(!files.length) return;
+    e.preventDefault();
+    for(const f of files){
+      if(P.items.length >= PASTE_MAX){ alert(`사진은 ${PASTE_MAX}장까지 붙일 수 있습니다.`); break; }
+      if(f.size > PASTE_BYTES){ alert(`사진 한 장은 ${PASTE_BYTES/1048576}MB 까지입니다 (${(f.size/1048576).toFixed(1)}MB).`); continue; }
+      const n = P.next++;
+      P.items.push({n, file:f, url:URL.createObjectURL(f), size:f.size, type:f.type});
+      ta.setRangeText(`\n[사진 ${n}]\n`, ta.selectionStart, ta.selectionEnd, "end");
+    }
+    ta.dispatchEvent(new Event("input")); draw();
+  });
+  strip.addEventListener("click", e=>{
+    const b = e.target.closest("button[data-n]"); if(!b) return;
+    const n = +b.dataset.n, it = P.items.find(i=>i.n===n);
+    if(it) URL.revokeObjectURL(it.url);
+    P.items = P.items.filter(i=>i.n!==n);
+    ta.value = ta.value.replace(`[사진 ${n}]`, ""); ta.dispatchEvent(new Event("input")); draw();
+  });
+  P.count = ()=>P.items.length;
+  P.meta = ()=>P.items.map(i=>({n:i.n, size:i.size, type:i.type}));
+  P.payload = ()=>Promise.all(P.items.map(i=>new Promise((ok,no)=>{ const r = new FileReader(); r.onload = ()=>ok({n:i.n, data:r.result}); r.onerror = no; r.readAsDataURL(i.file); })));
+  P.clear = ()=>{ P.items.forEach(i=>URL.revokeObjectURL(i.url)); P.items = []; P.next = 1; draw(); };
+  return P;
+}
+
 /* ===== 댓글 (현황 페이지) — 보기는 읽기 토큰, 달기는 쓰기 토큰. 달기 전에 한 번 더 확인한다. @ 알림 없음 ===== */
-const CM = {key:null, step:"edit", enabled:false, author:""};
+const CM = {key:null, step:"edit", enabled:false, author:"", paster:makePaster($("#c-text"), $("#cm-imgs"))};
 function cmMode(step){
   CM.step = step;
   const confirm = step==="confirm", busy = step==="busy";
@@ -627,7 +666,7 @@ function openComments(key){
   const row = REPORT.rows.find(r=>r.key===key) || {};
   CM.key = key; CM.enabled = false;
   $("#cm-key").textContent = key; $("#cm-title").textContent = row.title || "";
-  $("#cm-open").href = row.url || "#"; $("#c-text").value = ""; $("#cm-res").textContent = ""; $("#cm-res").className = "cres";
+  $("#cm-open").href = row.url || "#"; $("#c-text").value = ""; CM.paster.clear(); $("#cm-res").textContent = ""; $("#cm-res").className = "cres";
   $("#cm-note").textContent = ""; cmMode("edit"); $("#cm-send").hidden = true;
   $("#cdlg").showModal(); cmLoad();
 }
@@ -635,18 +674,21 @@ $("#cm-close").addEventListener("click", ()=>{ CM.step==="confirm" ? cmMode("edi
 $("#cm-send").addEventListener("click", async ()=>{
   const text = $("#c-text").value.trim();
   if(CM.step==="edit"){
-    if(!text){ $("#cm-res").className="cres err"; $("#cm-res").textContent = "댓글 내용을 입력하세요."; return; }
+    const ni = CM.paster.count();
+    if(!text && !ni){ $("#cm-res").className="cres err"; $("#cm-res").textContent = "댓글 내용을 입력하세요."; return; }
     $("#cm-res").textContent = "";
-    $("#cm-confirm").innerHTML = `<b>${esc(CM.key)}</b> 에 위 댓글을 ${esc(CM.author||"토큰 계정")} 이름으로 답니다. Jira 에 바로 올라가고 웹에서는 지울 수 없습니다. 달까요?`;
+    $("#cm-confirm").innerHTML = `<b>${esc(CM.key)}</b> 에 위 댓글을 ${esc(CM.author||"토큰 계정")} 이름으로 답니다.`
+      + (ni ? ` 사진 ${ni}장은 이 이슈의 첨부로도 올라갑니다.` : "") + ` Jira 에 바로 올라가고 웹에서는 지울 수 없습니다. 달까요?`;
     cmMode("confirm"); return;
   }
   if(CM.step!=="confirm") return;
   cmMode("busy");
   try{
-    const r = await fetch("/action/comment", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({key:CM.key, text})});
+    const images = await CM.paster.payload();
+    const r = await fetch("/action/comment", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({key:CM.key, text, images})});
     const res = await r.json();
     if(res.ok){
-      $("#c-text").value = "";
+      $("#c-text").value = ""; CM.paster.clear();
       await cmLoad();
       $("#cm-res").className = "cres ok"; $("#cm-res").innerHTML = `✓ 댓글을 달았습니다 — <a href="${esc(res.url)}" target="_blank" rel="noopener">Jira 에서 보기</a>`;
     } else {
@@ -934,14 +976,14 @@ function renderCreate(){
     e.target.checked ? set.add(l.dataset.u) : set.delete(l.dataset.u); l.classList.toggle("on", e.target.checked); update();
   });
   ["#c-title","#c-assignee","#c-start","#c-time","#c-due","#c-desc"].forEach(id=>$(id).addEventListener("input", update));
-  $("#c-reset").onclick = ()=>{ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); $("#c-start").value=today; $("#c-due").value=today; $("#c-time").value="09:00";
+  $("#c-reset").onclick = ()=>{ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); DP().clear(); $("#c-start").value=today; $("#c-due").value=today; $("#c-time").value="09:00";
     st.eng = new Set(M.default_engineers); st.cc = new Set(); st.touched=false; st.compAuto=true; st.catAuto=true; $("#c-end").value=today; $("#c-etime").value="18:00"; $("#c-delay").value="";
     $("#c-notices").innerHTML=""; pickParent(M.parents[0]?.key); setMode("close"); };
   $("#c-copy").onclick = ()=>{ navigator.clipboard && navigator.clipboard.writeText($("#c-payload").textContent); $("#c-copy").textContent="복사됨"; setTimeout(()=>$("#c-copy").textContent="JSON 복사",1200); };
   // 등록 = ① 화면 검사 → ② Dry-run 자동 실행(서버가 Jira 읽기 API 로 각 단계 확인) → ③ 결과 창에서 등록 여부를 다시 묻는다.
   const icon = l => l==="ok" ? "✓" : l==="warn" ? "!" : "✕";
   async function dryRun(){
-    const r = await fetch("/action/validate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps()})});
+    const r = await fetch("/action/validate", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps(), images:DP().meta()})});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
@@ -984,6 +1026,9 @@ function renderCreate(){
     dlg.returnValue = ""; dlg.showModal();
     dlg.addEventListener("close", ()=>{ if(dlg.returnValue==="ok") registered(); }, {once:true});
   }
+  let descPaster = null;
+  const DP = ()=> descPaster || (descPaster = makePaster($("#c-desc"), $("#c-imgs")));
+  DP();
   async function registered(){
     window.scrollTo({top:0,behavior:"smooth"});
     if(!LIVE){
@@ -993,14 +1038,15 @@ function renderCreate(){
     const b = $("#c-submit"); b.disabled = true; b.classList.add("busy"); b.lastChild.textContent = "등록 중…";
     $("#c-notices").innerHTML = `<div class="notice run"><span class="spin"></span><span class="grow">Jira 에 등록하는 중입니다 — 창을 닫지 마세요</span></div>`;
     try{
-      const r = await fetch("/action/create", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps()})});
+      const images = await DP().payload();
+      const r = await fetch("/action/create", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({steps:steps(), desc:$("#c-desc").value, images})});
       const res = await r.json();
       const done = (res.done||[]).map(esc).join(" → ");
       const link = res.key ? ` <a href="${esc(res.url)}" target="_blank" rel="noopener"><b>${esc(res.key)}</b> 열기</a>` : "";
       $("#c-notices").innerHTML = res.ok
         ? `<div class="notice ok"><b>등록 완료${res.key?" — "+esc(res.key):""}</b><span class="grow">${done}</span>${link}</div>`
         : `<div class="notice err"><b>${res.key ? "일부만 처리됨 — "+esc(res.key)+" 는 만들어졌습니다" : "등록하지 못했습니다"}</b><span class="grow">${esc(res.error||"")}${done?" · 완료: "+done:""}</span>${link}</div>`;
-      if(res.ok){ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); st.touched=false; update(); }
+      if(res.ok){ ["#c-title","#c-desc"].forEach(id=>$(id).value=""); DP().clear(); st.touched=false; update(); }
     }catch(e){
       $("#c-notices").innerHTML = `<div class="notice err"><b>응답을 받지 못했습니다</b><span class="grow">${esc(e.message)} — Jira 에 만들어졌을 수 있으니 실행 기록이나 Jira 를 확인하세요.</span></div>`;
     }

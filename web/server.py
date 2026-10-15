@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "app.html"
 HOST = os.environ.get("WEB_HOST", "127.0.0.1")
 PORT = int(os.environ.get("WEB_PORT", "8090"))
+# 붙여넣은 사진이 base64 로 들어온다 — 5장 × 10MB × 4/3 + 여유. nginx client_max_body_size 와 맞춘다.
+MAX_BODY = 80 * 1024 * 1024
 _running = threading.Lock()  # 발송·미리보기가 겹치지 않게
 
 OUTCOME = {"sent": "발송", "dry-run": "미리보기", "collect-failed": "수집 실패", "send-failed": "발송 실패"}
@@ -222,8 +224,8 @@ class Handler(BaseHTTPRequestHandler):
             # Jira 등록 검증 (dry-run) — 읽기 API 로만 확인한다. 아무것도 쓰지 않는다.
             try:
                 n = int(self.headers.get("Content-Length") or 0)
-                steps = json.loads(self.rfile.read(min(n, 200_000)) or b"{}").get("steps") or []
-                result = jira_form.validate(steps)
+                body = json.loads(self.rfile.read(min(n, 200_000)) or b"{}")
+                result = jira_form.validate(body.get("steps") or [], body.get("images") or [])
             except (ValueError, AttributeError) as exc:
                 result = [{"stage": "요청", "level": "bad", "msg": f"요청을 읽지 못했습니다: {exc}"}]
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
@@ -231,8 +233,8 @@ class Handler(BaseHTTPRequestHandler):
             # 실제 Jira 등록 — 쓰기 토큰. 서버가 허용 범위를 다시 확인하고 직전에 Dry-run 을 한 번 더 돈다.
             try:
                 n = int(self.headers.get("Content-Length") or 0)
-                steps = json.loads(self.rfile.read(min(n, 200_000)) or b"{}").get("steps") or []
-                result = jira_form.create(steps)
+                body = json.loads(self.rfile.read(min(n, MAX_BODY)) or b"{}")
+                result = jira_form.create(body.get("steps") or [], body.get("desc") or "", body.get("images") or [])
             except (ValueError, AttributeError) as exc:
                 result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}", "done": []}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
@@ -240,8 +242,9 @@ class Handler(BaseHTTPRequestHandler):
             # 댓글 달기 — 쓰기 토큰. 허용 범위(프로젝트·솔루션)는 서버가 다시 확인한다. @ 알림 없음.
             try:
                 n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(min(n, 50_000)) or b"{}")
-                result = jira_comment.add_comment(str(body.get("key") or "").strip().upper(), str(body.get("text") or ""))
+                body = json.loads(self.rfile.read(min(n, MAX_BODY)) or b"{}")
+                result = jira_comment.add_comment(str(body.get("key") or "").strip().upper(), str(body.get("text") or ""),
+                                                  body.get("images") or [])
             except (ValueError, AttributeError) as exc:
                 result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}"}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")

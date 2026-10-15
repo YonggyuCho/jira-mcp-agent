@@ -180,6 +180,24 @@ sed -i '/^WEB_UI=/d' /opt/jira-mcp/.env && sudo systemctl restart gpu-live-web  
 - 쓰기 토큰 범위: **첫 실제 댓글 (2026-10-15, 등록 테스트 이슈) 성공** — 줄바꿈 hardBreak 그대로, 이슈 상태·필드 변경 없음.
 - 글 속 주소(http/https)는 링크로 만든다 — API 로 넣은 평문은 Jira 가 자동으로 링크를 걸지 않는다. 웹의 댓글 목록에서도 링크로 보인다.
 
+### 사진 붙여넣기 — 댓글·설명 (2026-10-15)
+
+입력칸에 **Ctrl+V** 로 캡처를 붙이면 커서 자리에 `[사진 n]` 이 들어가고 아래에 미리보기(× 로 빼기)가 생긴다.
+보낼 때 서버(`web/jira_media.py`)가:
+
+1. 그 이슈에 첨부로 올린다 — `POST /issue/{key}/attachments` (multipart, `X-Atlassian-Token: no-check`). 파일 이름 `paste-<시각>-<n>-<임의>.png`
+2. `GET /attachment/content/{id}` 를 **리다이렉트를 따라가지 않고** 보내 `Location` 의 `…/file/<UUID>/binary` 에서 media UUID 를 꺼낸다
+   (2026-10-15 실측 — Jira 화면에서 붙여넣은 사진의 ADF media id 와 같은 값)
+3. 본문 ADF 의 `[사진 n]` 자리에 `mediaSingle > media{type:file, id:UUID, collection:""}` 를 넣는다. 자리 표시를 지운 사진은 맨 끝
+
+- **"첨부 없이" 는 Jira 구조상 불가** — 본문은 첨부를 가리킬 뿐이다 (Jira 화면에서 붙여도 같다). 그래서 이슈 첨부 목록에도 보인다.
+- 설명: 이슈를 만든 직후(1단계 바로 뒤) 사진을 올리고 설명을 다시 넣는다. 1단계 설명에는 자리 표시를 뺀 글이 들어간다.
+- 제한: 한 번에 5장, 장당 10MB, PNG·JPG·GIF (파일 앞부분으로 판단). 화면·서버 둘 다 확인. Dry-run 에 "사진 N장 (MB)" 줄.
+- 요청 크기: 사진이 base64 JSON 으로 와서 nginx `client_max_body_size 80m` + `web/server.py` `MAX_BODY` 를 맞춰 올렸다.
+- 실패: 사진 올리기에서 막히면 댓글은 달지 않는다. 이미 올라간 사진은 첨부로 남고 화면에 알린다.
+- 쓰기 토큰의 첨부 범위: 없는 이슈에 올리기 시도 → 읽기 토큰은 401(범위 없음), 쓰기 토큰은 범위 통과 (10-15 실측).
+- 설명도 이제 서버가 ADF 를 만든다 — 주소는 링크로.
+
 ## 3. 운영
 
 ```bash

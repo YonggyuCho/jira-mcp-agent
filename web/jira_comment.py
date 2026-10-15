@@ -3,6 +3,7 @@
 허용 범위는 서버가 다시 확인한다: 프로젝트 = AGENT_PROJECT 이고, 솔루션에 AGENT_SOLUTION 이 들어 있거나
 가장 최근 리포트 표에 나온 이슈만.
 @ 알림(멘션)은 넣지 않는다 — 입력한 글은 평문 문단으로만 보낸다 (사용자 결정 10-15).
+붙여넣은 사진은 그 이슈의 첨부로 올리고 글 속 자리에 보이게 넣는다 (web/jira_media.py).
 쓰기는 .env 의 WEB_COMMENT_ENABLED=1 + JIRA_API_TOKEN_WRITE 일 때만. 기록은 runs/comments.jsonl.
 """
 from __future__ import annotations
@@ -14,7 +15,7 @@ import time
 
 from jira_mcp import adf, client, config
 
-from . import jira_form
+from . import jira_form, jira_media
 
 KEY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 MAX_LEN = 5000
@@ -71,36 +72,6 @@ def list_comments(key: str, limit: int = 30) -> dict:
         c.close()
 
 
-URL = re.compile(r"https?://[^\s<>\"]+")
-
-
-def _inline(line: str) -> list[dict]:
-    """한 줄 → text 노드. 주소는 링크로 만든다 — API 로 넣은 글은 Jira 가 자동으로 링크를 걸지 않는다."""
-    out, pos = [], 0
-    for m in URL.finditer(line):
-        url = m.group(0).rstrip(".,)")
-        if m.start() > pos:
-            out.append({"type": "text", "text": line[pos:m.start()]})
-        out.append({"type": "text", "text": url, "marks": [{"type": "link", "attrs": {"href": url}}]})
-        pos = m.start() + len(url)
-    if pos < len(line):
-        out.append({"type": "text", "text": line[pos:]})
-    return out
-
-
-def _body(text: str) -> dict:
-    """평문 → ADF. 빈 줄로 문단을 나누고, 문단 안 줄바꿈은 hardBreak."""
-    paras = []
-    for block in re.split(r"\n\s*\n", text.strip()):
-        content = []
-        for i, line in enumerate(block.split("\n")):
-            if i:
-                content.append({"type": "hardBreak"})
-            content += _inline(line)
-        paras.append({"type": "paragraph", "content": content})
-    return {"type": "doc", "version": 1, "content": paras}
-
-
 def _log(entry: dict) -> None:
     from agent import store
     store.RUNS.mkdir(parents=True, exist_ok=True)
@@ -108,13 +79,18 @@ def _log(entry: dict) -> None:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def add_comment(key: str, text: str) -> dict:
+def add_comment(key: str, text: str, images: list[dict] | None = None) -> dict:
+    """images = [{n, data}] — 글 속 `[사진 n]` 자리에 들어간다 (web/jira_media.py)."""
     text = (text or "").replace("\r\n", "\n").strip()
-    result = {"ok": False, "key": key, "error": None}
+    result = {"ok": False, "key": key, "error": None, "done": []}
     if not enabled():
         result["error"] = "댓글 달기가 꺼져 있습니다 (.env WEB_COMMENT_ENABLED)"
         return result
-    if not text:
+    imgs, why = jira_media.decode(images or [])
+    if why:
+        result["error"] = why
+        return result
+    if not text and not imgs:
         result["error"] = "댓글 내용이 비어 있습니다"
         return result
     if len(text) > MAX_LEN:
@@ -130,13 +106,15 @@ def add_comment(key: str, text: str) -> dict:
         return result
     w = jira_form._write_client()
     try:
-        r = w.post(f"/issue/{key}/comment", json={"body": _body(text)})
+        media = jira_media.upload_all(w, key, imgs, result["done"]) if imgs else {}
+        r = w.post(f"/issue/{key}/comment", json={"body": jira_media.to_adf(text, media)})
         result.update(ok=True, id=r.get("id"),
                       url=f"{config.load().site.rstrip('/')}/browse/{key}?focusedCommentId={r.get('id')}")
     except client.JiraError as exc:
-        result["error"] = f"Jira 가 거절했습니다: {str(exc)[:300]}"
+        left = f" — 이미 올라간 첨부: {', '.join(result['done'])} (이슈 첨부 목록에 남아 있음)" if result["done"] else ""
+        result["error"] = f"Jira 가 거절했습니다: {str(exc)[:300]}{left}"
     finally:
         w.close()
     _log({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "key": key, "title": title, "ok": result["ok"],
-          "id": result.get("id"), "error": result["error"], "chars": len(text), "preview": text[:200]})
+          "id": result.get("id"), "error": result["error"], "chars": len(text), "images": len(imgs), "preview": text[:200]})
     return result

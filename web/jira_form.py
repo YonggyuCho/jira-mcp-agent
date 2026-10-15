@@ -251,7 +251,7 @@ def _same_flow_sample(c, project: str, type_id: str, cat: str) -> tuple[str | No
     return None, ""
 
 
-def validate(steps: list[dict]) -> list[dict]:
+def validate(steps: list[dict], images: list[dict] | None = None) -> list[dict]:
     """steps = 화면이 만든 단계별 요청. 결과: [{stage, level(ok/warn/bad), msg}]"""
     out: list[dict] = []
     add = lambda stage, level, msg: out.append({"stage": stage, "level": level, "msg": msg})  # noqa: E731
@@ -326,6 +326,17 @@ def validate(steps: list[dict]) -> list[dict]:
                     add(s1, "ok", f"상위 {pk} 있음 ({pf['issuetype']['name']}, {pf['status']['name']})")
             except client.JiraError:
                 add(s1, "bad", f"상위 {pk} 를 찾을 수 없음")
+
+        # ── 붙여넣은 사진 (설명) ──────────────────────────────────────────
+        if images:
+            from . import jira_media
+            why = jira_media.check_meta(images)
+            am = c.get("/attachment/meta")
+            if not am.get("enabled"):
+                why = why or "이 Jira 는 첨부가 꺼져 있습니다"
+            mb = sum(int(i.get("size") or 0) for i in images) / 1048576
+            add(s1, "bad" if why else "ok",
+                why or f"사진 {len(images)}장 ({mb:.1f}MB) — 이슈를 만든 직후 첨부로 올리고 설명의 [사진 n] 자리에 넣음")
 
         # ── 2·3. 전환 ───────────────────────────────────────────────────
         for s in steps:
@@ -467,7 +478,7 @@ def _log(entry: dict) -> None:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def create(steps: list[dict]) -> dict:
+def create(steps: list[dict], desc: str = "", images: list[dict] | None = None) -> dict:
     """결과: {ok, key, url, done:[단계 설명], error, dry:[검증 결과]}"""
     import datetime as _dt
     started = _dt.datetime.now().isoformat(timespec="seconds")
@@ -483,7 +494,12 @@ def create(steps: list[dict]) -> dict:
     if why:
         result["error"] = why
         return result
-    dry = validate(steps)
+    from . import jira_media
+    imgs, why = jira_media.decode(images or [])
+    if why:
+        result["error"] = why
+        return result
+    dry = validate(steps, [{"n": i["n"], "size": len(i["bytes"]), "type": i["mime"]} for i in imgs])
     result["dry"] = dry
     if any(x["level"] == "bad" for x in dry):
         result["error"] = "Dry-run 실패 — 보내지 않았습니다"
@@ -492,10 +508,18 @@ def create(steps: list[dict]) -> dict:
     c = _write_client()
     site = config.load().site
     try:
-        created = c.post("/issue", json=steps[0]["body"])
+        body = steps[0]["body"]
+        if desc.strip():
+            # 설명은 서버가 만든다 — 주소를 링크로. 사진 자리 표시는 사진을 올린 뒤에 채운다.
+            body = {**body, "fields": {**body["fields"], "description": jira_media.to_adf(jira_media.strip_tokens(desc) if imgs else desc)}}
+        created = c.post("/issue", json=body)
         key = created.get("key")
         result.update(key=key, url=f"{site}/browse/{key}")
         result["done"].append(f"1. 등록 → {key}")
+        if imgs:
+            media = jira_media.upload_all(c, key, imgs, result["done"])
+            c.request("PUT", f"/issue/{key}", json={"fields": {"description": jira_media.to_adf(desc, media)}})
+            result["done"].append(f"1. 설명에 사진 {len(imgs)}장 넣기")
         for s in steps[1:]:
             path = s["path"].replace("{키}", key)
             if s["method"] == "POST":

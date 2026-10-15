@@ -349,6 +349,7 @@ cron / 웹 버튼 ─▶ python -m agent.daily ─▶ runs/<날짜>/<시각>-<�
 
 - **판정은 웹이 하지 않는다.** 버튼은 cron 과 같은 명령을 실행한다. 미리보기는 `AGENT_DRY_RUN=1` 을 강제한다.
 - **`runs/` 는 공개 저장소에 올리지 않는다** (이슈 키·담당자 이름). `.gitignore` 에 있다.
+- nginx 사이트 설정에 `client_max_body_size 80m;` — 붙여넣은 사진이 base64 JSON 으로 온다 (`docs/WEB.md`).
 - 앱은 `127.0.0.1` 에만 묶는다. HTTPS 와 로그인은 nginx 가 맡는다. 버튼(POST)은 같은 출처만 받는다.
 
 ```bash
