@@ -200,14 +200,15 @@ tr.grp.closed .grp-car{transform:rotate(-90deg)}
 .task{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;align-items:start;padding:10px 0;border-top:1px solid var(--border)}
 .task:first-of-type{border-top:0}
 .task .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:var(--border-strong)}
-.task.none .dot{background:var(--ok)}.task.red .dot{background:var(--risk)}.task.yellow .dot{background:#D9A400}.task.gray .dot{background:var(--text-3)}
+.task.red .dot{background:var(--risk)}.task.orange .dot{background:#F07800}.task.yellow .dot{background:#E8B500}.task.gray .dot{background:var(--text-3)}
 .task .tt{min-width:0}.task .tt a{font-weight:600}.task .tt .nm{color:var(--text);margin-left:6px}
 .task .facts{grid-column:2;font-size:13px;color:var(--text-2)}
 .task .flags{grid-column:2;display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
 .task .flag{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text-2)}
-.task .flag.ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-border)}
 .task .flag.red{color:var(--risk);background:var(--risk-bg);border-color:var(--risk-border)}
-.task .flag.yellow{color:var(--mis);background:var(--mis-bg);border-color:var(--mis-border)}
+.task .flag.orange{color:var(--mis);background:var(--mis-bg);border-color:var(--mis-border)}
+.task .flag.yellow{color:#8A6A00;background:#FFF7D6;border-color:#F0DC8C}
+@media (prefers-color-scheme: dark){.task .flag.yellow{color:#F2D060;background:#33290A;border-color:#5C4A12}}
 .task .who{font-size:13px;color:var(--text-2);white-space:nowrap}
 @media (max-width:640px){.task{grid-template-columns:auto 1fr}.task .who{grid-column:2}}
 .diffline .new{color:var(--risk);font-weight:700}.diffline .gone{color:var(--ok);font-weight:700}
@@ -1092,19 +1093,18 @@ function renderNotice(){
   $("#notices").innerHTML = `<div class="notice ${cls}"><b>${esc(n.head)}</b><span class="grow">${esc(n.body)}</span>${n.link?`<a href="${esc(n.link)}">실행 기록 보기</a>`:""}</div>`;
 }
 function renderTasks(){
-  // 진행 중 작업 (상위 이슈 제외) — 종료 처리를 잊은 것 같은 작업을 색으로 (R54)
+  // 진행 중 작업 (상위 이슈 제외) — 색은 기한 하나로: 🔴 지남 · 🟠 오늘·내일 · 🟡 2일 이상 (R54)
   const T = REPORT.tasks; if(!T) return;
-  const rank = {red:0, yellow:1, gray:2, none:9};
-  const worst = t => t.flags.reduce((a,f)=>rank[f.level]<rank[a]?f.level:a, "none");
-  const n = T.filter(t=>t.flags.length).length;
-  $("#tasks").innerHTML = `<div class="card tasks"><h2>진행 중 작업 ${T.length}건 <small>상위 이슈(프로젝트·구축) 제외`
-    + (n ? ` · 종료 누락 의심 ${n}건` : ``) + ` · 🔴 기한 지남 · 🟡 7일 넘게 변화 없음 · ⚪ 진행 14일 넘음</small></h2>`
-    + (T.length ? T.map(t=>`<div class="task ${worst(t)}"><span class="dot"></span>
+  const cnt = lv => T.filter(t=>t.flags[0] && t.flags[0].level===lv).length;
+  const tally = [["red","지남"],["orange","오늘·내일"],["yellow","2일 이상"],["gray","기한 없음"]]
+    .filter(([lv])=>cnt(lv)).map(([lv,l])=>`<span class="flag ${lv}">${l} ${cnt(lv)}</span>`).join("");
+  $("#tasks").innerHTML = `<div class="card tasks"><h2>진행 중 작업 ${T.length}건 <small>상위 이슈(프로젝트·구축) 제외 · 기한 순</small>`
+    + `<span class="flags" style="display:inline-flex;gap:6px;margin-left:auto">${tally}</span></h2>`
+    + (T.length ? T.map(t=>{ const f = t.flags[0] || {level:"gray", text:"기한 없음"}; return `<div class="task ${f.level}"><span class="dot"></span>
         <div class="tt"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.key)}</a><span class="nm">${esc(t.title)}</span></div>
         <span class="who">${esc(t.assignee||"담당자 없음")} · 기한 ${esc(t.due)}</span>
         <div class="facts">${esc(t.kind)} · ${esc(t.facts)}</div>
-        <div class="flags">${t.flags.length ? t.flags.map(f=>`<span class="flag ${f.level}">${esc(f.text)}</span>`).join("") : `<span class="flag ok">정상 진행</span>`}</div>
-      </div>`).join("") : `<div class="facts" style="color:var(--text-3)">진행 중인 작업이 없습니다</div>`)
+      </div>`; }).join("") : `<div class="facts" style="color:var(--text-3)">진행 중인 작업이 없습니다</div>`)
     + `</div>`;
 }
 function renderDiff(){

@@ -6,7 +6,7 @@ import os
 from .collect import MISMATCH, RISK, Report, open_tasks
 
 SEVERITY_MARK = {0: "🔴", 1: "🔴", 2: "🟡", 3: "🟠"}
-FLAG_MARK = {"red": "🔴", "yellow": "🟡", "gray": "⚪"}
+FLAG_MARK = {"red": "🔴", "orange": "🟠", "yellow": "🟡", "gray": "⚪"}
 
 
 def show_open_tasks() -> bool:
@@ -16,12 +16,9 @@ def show_open_tasks() -> bool:
 
 def task_facts(t: dict) -> str:
     """진행 N일 · 기한 … · 마지막 수정 …"""
-    left = t["left"]
-    due = ("기한 없음" if left is None else f"기한 {-left}일 지남" if left < 0
-           else "기한 오늘" if left == 0 else f"기한 {left}일 남음")
     run = f"진행 {t['running']}일째" if t["running"] is not None else "실제 시작 없음"
     idle = ("오늘 수정" if t["idle"] == 0 else f"마지막 수정 {t['idle']}일 전") if t["idle"] is not None else ""
-    return " · ".join(x for x in (run, due, idle) if x)
+    return " · ".join(x for x in (t["flags"][0]["text"], run, idle) if x)
 
 
 def group(findings):
@@ -88,11 +85,8 @@ def body(report: Report) -> str:
         out += ["", f"■ 진행 중 작업 {len(tasks)}건 (상위 이슈 제외)"]
         for t in tasks:
             i = t["issue"]
-            mark = min((FLAG_MARK[f["level"]] for f in t["flags"]), key=list(FLAG_MARK.values()).index, default="▫️")
-            out.append(f"  {mark} {i.key}  {i.summary[:40]}  [{i.status} · {i.assignee or '담당자 없음'}]")
+            out.append(f"  {FLAG_MARK[t['flags'][0]['level']]} {i.key}  {i.summary[:40]}  [{i.status} · {i.assignee or '담당자 없음'}]")
             out.append(f"      · {task_facts(t)}")
-            if t["flags"]:
-                out.append("      · 종료 누락 의심: " + ", ".join(f["text"] for f in t["flags"]))
         if not tasks:
             out.append("  없음")
 

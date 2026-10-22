@@ -128,15 +128,25 @@ class Report:
         return out
 
 
-# ── 진행 중 작업 (종료 처리 누락 의심) ─────────────────────────────────────
+# ── 진행 중 작업 ───────────────────────────────────────────────────────────
 # 위험·불일치 판정과 별개인 '보기' 다. 헤드라인·이전 대비 비교에 넣지 않는다 (사용자 결정 10-22).
+# 색은 기한 하나로만 정한다 (사용자 10-22): 🔴 지남 · 🟠 오늘·내일 · 🟡 2일 이상 남음 · ⚪ 기한 없음.
 # 끄기: .env AGENT_OPEN_TASKS=0 → Teams·웹 둘 다 안 보인다.
-STALE_DAYS = 7    # 마지막 수정 후 이만큼 지나면 🟡 멈춤 의심
-LONG_DAYS = 14    # 실제 시작 후 이만큼 지나면 ⚪ 오래 진행
+SOON_DAYS = 1     # 기한까지 이 날수 이하면 🟠
+
+
+def _due_flag(left: int | None) -> dict:
+    if left is None:
+        return {"level": "gray", "text": "기한 없음"}
+    if left < 0:
+        return {"level": "red", "text": f"기한 {-left}일 지남"}
+    if left <= SOON_DAYS:
+        return {"level": "orange", "text": "기한 오늘" if left == 0 else "기한 내일"}
+    return {"level": "yellow", "text": f"기한 {left}일 남음"}
 
 
 def open_tasks(report: "Report") -> list[dict]:
-    """상위 이슈(프로젝트·구축)를 뺀 진행 중 작업. 급한 순(표시 등급 → 기한)."""
+    """상위 이슈(프로젝트·구축)를 뺀 진행 중 작업. 기한 순 (지난 것 먼저, 기한 없음은 끝)."""
     today = report.today
     out = []
     for i in report.issues:
@@ -144,20 +154,11 @@ def open_tasks(report: "Report") -> list[dict]:
             continue
         begun = _date(i.actual_start) or _date(i.start_date)
         touched = _date(i.updated)
-        running = (today - begun).days if begun else None
-        idle = (today - touched).days if touched else None
         left = i.days_left(today)
-        flags = []
-        if left is not None and left < 0:
-            flags.append({"level": "red", "text": f"기한 {-left}일 지남"})
-        if idle is not None and idle > STALE_DAYS:
-            flags.append({"level": "yellow", "text": f"{idle}일째 변화 없음"})
-        if running is not None and running > LONG_DAYS:
-            flags.append({"level": "gray", "text": f"진행 {running}일째"})
-        out.append({"issue": i, "running": running, "idle": idle, "left": left, "flags": flags})
-    rank = {"red": 0, "yellow": 1, "gray": 2}
-    out.sort(key=lambda t: (min((rank[f["level"]] for f in t["flags"]), default=3),
-                            t["issue"].duedate or dt.date.max, t["issue"].key))
+        out.append({"issue": i, "running": (today - begun).days if begun else None,
+                    "idle": (today - touched).days if touched else None, "left": left,
+                    "flags": [_due_flag(left)]})
+    out.sort(key=lambda t: (t["issue"].duedate or dt.date.max, t["issue"].key))
     return out
 
 
