@@ -44,6 +44,9 @@ FINE = {"On Time", "Early"}
 
 # 화면 표시명 기준. JQL 로는 상태를 거를 수 없어(표시명 != JQL 상태명) 코드에서 판단한다.
 DONE = {"종료", "완료", "완료(Done)", "Done", "해결됨"}
+# 다시 열림 상태 (changelog 에는 영문 이름으로 남는다). 다시 열었다가 '작업 시작' 하면
+# Jira 가 Actual start 를 그 시각으로 덮어 시작 날짜와 달라진다 — 오기입이 아니다 (사용자 결정 10-22).
+REOPENED = {"Reopened", "다시 열림"}
 # 장기 상위 이슈. 미평가가 정상이라 보고하지 않는다.
 PARENT_KINDS = {"프로젝트", "구축(재구축/증설/형상변경)"}
 
@@ -199,11 +202,14 @@ def _tree(c: client.JiraClient, project: str, epic: str) -> list[dict]:
 
 def _judge(issues: list[Issue], today: dt.date, due_soon: int,
            project_parents: set[str] | None = None,
-           skipped: dict[str, int] | None = None) -> list[Finding]:
+           skipped: dict[str, int] | None = None,
+           reopened: set[str] | None = None) -> list[Finding]:
     """위험 / 불일치를 이유와 함께 남긴다. 규칙 원본은 GPU-LIVE-AUDIT.md 8장.
 
     project_parents: 이 이슈들의 바로 아래(회의 제외)는 이슈 분류가 '솔루션 제품 개선' 이어야 한다.
+    reopened: 한 번이라도 다시 열렸던 이슈. 시작 날짜 ≠ Actual start 를 불일치로 보지 않는다.
     """
+    reopened = reopened or set()
     project_parents = project_parents or set()
     skipped = skipped if skipped is not None else {}
     found: list[Finding] = []
@@ -251,7 +257,9 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
         # 시작 날짜와 Actual start 는 년월일이 같아야 한다. 시간은 보지 않는다.
         # 둘 중 하나가 비면 건너뛴다 — 빈 칸은 위에서 미기입으로 잡힌다.
         start, actual = _date(i.start_date), _date(i.actual_start)
-        if start and actual and start != actual:
+        if start and actual and start != actual and i.key in reopened:
+            skipped["다시 열렸던 이슈의 시작 날짜 ≠ Actual start"] = skipped.get("다시 열렸던 이슈의 시작 날짜 ≠ Actual start", 0) + 1
+        elif start and actual and start != actual:
             found.append(Finding(i, f"시작 날짜 {start} ≠ Actual start {actual}", 3, MISMATCH))
         if i.support and i.support != EXPECT_SUPPORT:
             found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
@@ -263,6 +271,27 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
 
     found.sort(key=lambda f: (f.severity, f.issue.duedate or dt.date.max))
     return found
+
+
+def _reopened(c: client.JiraClient, issues: list[Issue]) -> set[str]:
+    """시작 날짜 ≠ Actual start 인 이슈만 이력을 본다 (대부분 해당 없어 호출이 적다)."""
+    out = set()
+    for i in issues:
+        start, actual = _date(i.start_date), _date(i.actual_start)
+        if not (start and actual and start != actual):
+            continue
+        at = 0
+        while True:
+            r = c.get(f"/issue/{i.key}/changelog", params={"startAt": at, "maxResults": 100})
+            vals = r.get("values") or []
+            if any(it.get("field") == "status" and it.get("toString") in REOPENED
+                   for h in vals for it in h.get("items") or []):
+                out.add(i.key)
+                break
+            at += len(vals)
+            if not vals or r.get("isLast", True):
+                break
+    return out
 
 
 def collect(project: str, solution: str, due_soon_days: int = 3,
@@ -324,7 +353,7 @@ def collect(project: str, solution: str, due_soon_days: int = 3,
 
     issues = [_issue(r, cfg.site) for r in rows]
     skipped: dict[str, int] = {}
-    findings = _judge(issues, today, due_soon_days, project_parents, skipped)
+    findings = _judge(issues, today, due_soon_days, project_parents, skipped, _reopened(c, issues))
     findings += [Finding(i, f"솔루션 '{i.solution or '공란'}' → {solution} (에픽 안, 집계 제외)",
                          3, MISMATCH) for i in strays]
     report = Report(today=today, solution=solution, issues=issues, findings=findings,
