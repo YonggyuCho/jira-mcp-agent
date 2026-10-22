@@ -21,6 +21,7 @@ CHILD_JQL = 'project = {project} AND parent in ({keys}) ORDER BY key ASC'
 
 FIELDS = [
     "summary", "status", "assignee", "reporter", "issuetype", "duedate", "parent",
+    "updated",            # 마지막 변경 시각 — '진행 중 작업' 의 멈춤 판단
     "description",        # 설명. ADF(중첩 JSON)라 평문으로 펴서 비었는지 본다
     "customfield_10008",  # Actual start
     "customfield_10009",  # Actual end
@@ -72,6 +73,7 @@ class Issue:
     category: str | None = None
     solution: str | None = None
     parent: str | None = None
+    updated: str | None = None
     site: str = ""
 
     @property
@@ -124,6 +126,39 @@ class Report:
         for i in self.issues:
             out[i.status] = out.get(i.status, 0) + 1
         return out
+
+
+# ── 진행 중 작업 (종료 처리 누락 의심) ─────────────────────────────────────
+# 위험·불일치 판정과 별개인 '보기' 다. 헤드라인·이전 대비 비교에 넣지 않는다 (사용자 결정 10-22).
+# 끄기: .env AGENT_OPEN_TASKS=0 → Teams·웹 둘 다 안 보인다.
+STALE_DAYS = 7    # 마지막 수정 후 이만큼 지나면 🟡 멈춤 의심
+LONG_DAYS = 14    # 실제 시작 후 이만큼 지나면 ⚪ 오래 진행
+
+
+def open_tasks(report: "Report") -> list[dict]:
+    """상위 이슈(프로젝트·구축)를 뺀 진행 중 작업. 급한 순(표시 등급 → 기한)."""
+    today = report.today
+    out = []
+    for i in report.issues:
+        if i.is_done or i.is_parent:
+            continue
+        begun = _date(i.actual_start) or _date(i.start_date)
+        touched = _date(i.updated)
+        running = (today - begun).days if begun else None
+        idle = (today - touched).days if touched else None
+        left = i.days_left(today)
+        flags = []
+        if left is not None and left < 0:
+            flags.append({"level": "red", "text": f"기한 {-left}일 지남"})
+        if idle is not None and idle > STALE_DAYS:
+            flags.append({"level": "yellow", "text": f"{idle}일째 변화 없음"})
+        if running is not None and running > LONG_DAYS:
+            flags.append({"level": "gray", "text": f"진행 {running}일째"})
+        out.append({"issue": i, "running": running, "idle": idle, "left": left, "flags": flags})
+    rank = {"red": 0, "yellow": 1, "gray": 2}
+    out.sort(key=lambda t: (min((rank[f["level"]] for f in t["flags"]), default=3),
+                            t["issue"].duedate or dt.date.max, t["issue"].key))
+    return out
 
 
 def _val(v):
@@ -183,6 +218,7 @@ def _issue(raw: dict, site: str) -> Issue:
         category=_val(f.get("customfield_12530")),
         solution=_val(f.get("customfield_12473")),
         parent=(f.get("parent") or {}).get("key"),
+        updated=f.get("updated"),
         site=site,
     )
 

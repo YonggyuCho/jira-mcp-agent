@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from agent import store
+from agent import render as report_text, store
 
 from . import jira_comment, jira_form
 
@@ -68,6 +68,13 @@ def _report(run: dict, prev: dict | None) -> tuple[dict | None, dict]:
         "counts": counts, "skipped": ", ".join(f"{k} {v}건" for k, v in rep.get("skipped", {}).items()),
         "rows": rows,
     }
+    # 진행 중 작업 (상위 이슈 제외). 예전 기록엔 없고, .env AGENT_OPEN_TASKS=0 이면 숨긴다.
+    if report_text.show_open_tasks() and "open_tasks" in rep:
+        info = {r["issue"]["key"]: r["issue"] for r in rep["rows"]}
+        report["tasks"] = [{**t, "facts": report_text.task_facts(t), "title": info[t["key"]]["summary"],
+                            "url": info[t["key"]]["url"], "assignee": info[t["key"]].get("assignee") or "",
+                            "kind": info[t["key"]]["kind"], "due": info[t["key"]].get("duedate") or "-"}
+                           for t in rep["open_tasks"] if t["key"] in info]
     diff = {"base": _at(d["base"]) if d["base"] else None, "new": d["new"], "resolved": d["resolved"]}
     return report, diff
 

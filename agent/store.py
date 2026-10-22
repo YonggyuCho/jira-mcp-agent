@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from .collect import MISMATCH, RISK, Report
+from .collect import MISMATCH, RISK, Report, open_tasks
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = Path(os.environ.get("AGENT_RUNS_DIR", ROOT / "runs"))
@@ -55,6 +55,9 @@ def snapshot(report: Report) -> dict:
         "skipped": report.skipped,
         "hygiene": report.hygiene,
         "rows": rows,
+        # 진행 중 작업 — 예전 기록에는 없다 (화면은 없으면 안 그린다)
+        "open_tasks": [{"key": t["issue"].key, "running": t["running"], "idle": t["idle"], "left": t["left"],
+                        "flags": t["flags"]} for t in open_tasks(report)],
     }
 
 

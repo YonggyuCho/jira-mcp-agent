@@ -194,6 +194,21 @@ tr.grp.closed .grp-car{transform:rotate(-90deg)}
 .grp-cnt .m{color:var(--mis);font-weight:700}
 
 .diffline{margin-top:12px;font-size:13px;color:var(--text-2);display:flex;flex-wrap:wrap;gap:4px 14px}
+.tasks{margin-top:16px}
+.tasks h2{font-size:14px;margin:0 0 10px;color:var(--text-2);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tasks h2 small{font-weight:400;color:var(--text-3)}
+.task{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;align-items:start;padding:10px 0;border-top:1px solid var(--border)}
+.task:first-of-type{border-top:0}
+.task .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:var(--border-strong)}
+.task.red .dot{background:var(--risk)}.task.yellow .dot{background:#D9A400}.task.gray .dot{background:var(--text-3)}
+.task .tt{min-width:0}.task .tt a{font-weight:600}.task .tt .nm{color:var(--text);margin-left:6px}
+.task .facts{grid-column:2;font-size:13px;color:var(--text-2)}
+.task .flags{grid-column:2;display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.task .flag{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text-2)}
+.task .flag.red{color:var(--risk);background:var(--risk-bg);border-color:var(--risk-border)}
+.task .flag.yellow{color:var(--mis);background:var(--mis-bg);border-color:var(--mis-border)}
+.task .who{font-size:13px;color:var(--text-2);white-space:nowrap}
+@media (max-width:640px){.task{grid-template-columns:auto 1fr}.task .who{grid-column:2}}
 .diffline .new{color:var(--risk);font-weight:700}.diffline .gone{color:var(--ok);font-weight:700}
 .empty-row td{text-align:center;color:var(--text-3);padding:32px}
 .foot{margin-top:8px;font-size:12px;color:var(--text-3)}
@@ -352,6 +367,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div id="notices"></div>
   <div id="summary"></div>
   <div id="diff"></div>
+  <div id="tasks"></div>
 
   <div class="toolbar" id="toolbar">
     <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">프로젝트별로 묶기</button></div>
@@ -1074,6 +1090,22 @@ function renderNotice(){
   const cls = n.kind==="ok" ? "ok" : "err";
   $("#notices").innerHTML = `<div class="notice ${cls}"><b>${esc(n.head)}</b><span class="grow">${esc(n.body)}</span>${n.link?`<a href="${esc(n.link)}">실행 기록 보기</a>`:""}</div>`;
 }
+function renderTasks(){
+  // 진행 중 작업 (상위 이슈 제외) — 종료 처리를 잊은 것 같은 작업을 색으로 (R54)
+  const T = REPORT.tasks; if(!T) return;
+  const rank = {red:0, yellow:1, gray:2, none:9};
+  const worst = t => t.flags.reduce((a,f)=>rank[f.level]<rank[a]?f.level:a, "none");
+  const n = T.filter(t=>t.flags.length).length;
+  $("#tasks").innerHTML = `<div class="card tasks"><h2>진행 중 작업 ${T.length}건 <small>상위 이슈(프로젝트·구축) 제외`
+    + (n ? ` · 종료 누락 의심 ${n}건` : ``) + ` · 🔴 기한 지남 · 🟡 7일 넘게 변화 없음 · ⚪ 진행 14일 넘음</small></h2>`
+    + (T.length ? T.map(t=>`<div class="task ${worst(t)}"><span class="dot"></span>
+        <div class="tt"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.key)}</a><span class="nm">${esc(t.title)}</span></div>
+        <span class="who">${esc(t.assignee||"담당자 없음")} · 기한 ${esc(t.due)}</span>
+        <div class="facts">${esc(t.kind)} · ${esc(t.facts)}</div>
+        ${t.flags.length?`<div class="flags">${t.flags.map(f=>`<span class="flag ${f.level}">${esc(f.text)}</span>`).join("")}</div>`:""}
+      </div>`).join("") : `<div class="facts" style="color:var(--text-3)">진행 중인 작업이 없습니다</div>`)
+    + `</div>`;
+}
 function renderDiff(){
   const d = DATA.diff; if(!d || !d.base) return;
   // 이전 리포트와 비교해 위험·불일치 목록에 새로 들어온 이슈 / 목록에서 빠진 이슈
@@ -1096,7 +1128,7 @@ if(PAGE==="create"){
     ["#toolbar",".tablebox","#foot","details.raw"].forEach(q=>{ const el=$(q); if(el) el.hidden=true; });
     renderNotice();
   } else {
-    renderTop(); render(); renderNotice(); renderDiff();
+    renderTop(); render(); renderNotice(); renderDiff(); renderTasks();
   }
 }
 </script>
