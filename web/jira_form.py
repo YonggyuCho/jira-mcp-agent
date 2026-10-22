@@ -212,11 +212,13 @@ def form_meta(refresh: bool = False) -> dict:
 # Jira 에는 '등록 미리 시험' API 가 없다. 그래서 읽기 API 로 실제 등록 때 실패할 지점을 하나씩 확인한다.
 # 아무것도 쓰지 않는다.
 
-def _sample(c, project: str, type_id: str, cat: str) -> str | None:
-    """같은 유형에서 상태 범주가 cat(new / indeterminate / done)인 이슈 하나."""
+def _sample(c, project: str, type_id: str, cat: str, status: str | None = None) -> str | None:
+    """같은 유형에서 상태 범주가 cat(new / indeterminate / done)인 이슈 하나.
+    status(상태 id)를 주면 그 상태인 이슈만 — 같은 '진행' 범주라도 Pending 은 종료 전환이 없다 (2026-10-22 오탐)."""
     names = {"new": "To Do", "indeterminate": "In Progress", "done": "Done"}
+    cond = f"status = {status}" if status else f'statusCategory = "{names[cat]}"'
     r = c.post("/search/jql", json={"jql": f'project = {project} AND issuetype = {type_id} '
-                                            f'AND statusCategory = "{names[cat]}" ORDER BY updated DESC',
+                                            f'AND {cond} ORDER BY updated DESC',
                                      "maxResults": 1, "fields": ["status"]})
     iss = r.get("issues") or []
     return iss[0]["key"] if iss else None
@@ -236,7 +238,7 @@ def _stage(s: dict) -> str:
     return f"{s.get('step')}. {what}"
 
 
-def _same_flow_sample(c, project: str, type_id: str, cat: str) -> tuple[str | None, str]:
+def _same_flow_sample(c, project: str, type_id: str, cat: str, status: str | None = None) -> tuple[str | None, str]:
     """같은 유형에 표본이 없을 때, 상태 목록이 완전히 같은 다른 등록 유형에서 표본을 찾는다.
     회의는 대부분 바로 종료돼 진행 전·진행 중 표본이 거의 없다 (2026-10-12 실측: 0건)."""
     flows = {t["id"]: (t["name"], sorted(x["name"] for x in t["statuses"]))
@@ -245,7 +247,7 @@ def _same_flow_sample(c, project: str, type_id: str, cat: str) -> tuple[str | No
     names = {v: k for k, v in form_meta()["types"].items()}
     for tid, (_, sts) in flows.items():
         if tid != type_id and tid in names and sts == mine:
-            key = _sample(c, project, tid, cat)
+            key = _sample(c, project, tid, cat, status)
             if key:
                 return key, names[tid]
     return None, ""
@@ -339,6 +341,7 @@ def validate(steps: list[dict], images: list[dict] | None = None) -> list[dict]:
                 why or f"사진 {len(images)}장 ({mb:.1f}MB) — 이슈를 만든 직후 첨부로 올리고 설명의 [사진 n] 자리에 넣음")
 
         # ── 2·3. 전환 ───────────────────────────────────────────────────
+        after = {}  # 전환 id → 도착 상태 id. 다음 단계는 정확히 그 상태의 표본으로 본다 (같은 범주라도 Pending·취소는 다름)
         for s in steps:
             tid = ((s.get("body") or {}).get("transition") or {}).get("id")
             if not tid:
@@ -347,9 +350,10 @@ def validate(steps: list[dict], images: list[dict] | None = None) -> list[dict]:
             # '지금 할 수 있는 전환' 을 조회해 이 전환이 있는지, 전환 때 따로 묻는 칸이 있는지 본다.
             cat = "new" if tid == TRANSITIONS["start"] else "indeterminate"
             state = "진행 전" if cat == "new" else "진행 중"
-            key, via = _sample(c, project, type_id, cat), ""
+            st = after.get(TRANSITIONS["start"]) if cat == "indeterminate" else None
+            key, via = _sample(c, project, type_id, cat, st), ""
             if not key:
-                key, other = _same_flow_sample(c, project, type_id, cat)
+                key, other = _same_flow_sample(c, project, type_id, cat, st)
                 via = f" · {state}인 같은 유형이 없어, 상태 흐름이 같은 '{other}' {key} 로 확인" if key else ""
             if not key:
                 add(_stage(s), "warn", f"미리 확인 못 함 — {state}인 이슈가 없음. "
@@ -360,6 +364,7 @@ def validate(steps: list[dict], images: list[dict] | None = None) -> list[dict]:
             if not hit:
                 add(_stage(s), "bad", f"전환(id {tid})이 없음 — Jira 워크플로가 바뀌었을 수 있음 (표본 {key})")
                 continue
+            after[tid] = hit["to"]["id"]
             req = [v.get("name") for v in (hit.get("fields") or {}).values() if v.get("required")]
             add(_stage(s), "bad" if req else "ok",
                 f"'{hit['name']}' 전환 가능 → {hit['to']['name']}"
@@ -370,7 +375,7 @@ def validate(steps: list[dict], images: list[dict] | None = None) -> list[dict]:
         if put:
             final = "done" if any(((s.get("body") or {}).get("transition") or {}).get("id") == TRANSITIONS["close"]
                                   for s in steps) else "indeterminate"
-            key = _sample(c, project, type_id, final)
+            key = _sample(c, project, type_id, final, after.get(TRANSITIONS["close"] if final == "done" else TRANSITIONS["start"]))
             if not key:
                 add(_stage(put), "warn", "미리 확인 못 함 — 같은 상태의 이슈가 없음")
             else:
