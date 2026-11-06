@@ -237,6 +237,23 @@ def _tree(c: client.JiraClient, project: str, epic: str) -> list[dict]:
     return sorted(seen.values(), key=lambda r: int(r["key"].rsplit("-", 1)[1]))
 
 
+def load_exceptions() -> dict[str, dict]:
+    """이슈별 예외 — 불일치 규칙과 다르지만 사용자가 '이 이슈는 이 값이 맞다' 고 인정한 것.
+
+    {"<이슈 키>": {"support": "<값>", "category": "<값>", "why": "...", "at": "YYYY-MM-DD"}}
+    값이 **정확히 같을 때만** 인정한다 — 나중에 다른 값으로 바뀌면 다시 잡힌다.
+    이슈 키가 들어가므로 공개 저장소 밖(docs/internal)에 둔다. 경로는 AGENT_EXCEPTIONS 로 바꿀 수 있다.
+    """
+    import json
+    import os
+    from pathlib import Path
+    path = Path(os.environ.get("AGENT_EXCEPTIONS") or Path(__file__).resolve().parent.parent / "docs/internal/EXCEPTIONS.json")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def _judge(issues: list[Issue], today: dt.date, due_soon: int,
            project_parents: set[str] | None = None,
            skipped: dict[str, int] | None = None,
@@ -247,6 +264,7 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
     reopened: 한 번이라도 다시 열렸던 이슈. 시작 날짜 ≠ Actual start 를 불일치로 보지 않는다.
     """
     reopened = reopened or set()
+    exceptions = load_exceptions()
     project_parents = project_parents or set()
     skipped = skipped if skipped is not None else {}
     found: list[Finding] = []
@@ -298,12 +316,18 @@ def _judge(issues: list[Issue], today: dt.date, due_soon: int,
             skipped["다시 열렸던 이슈의 시작 날짜 ≠ Actual start"] = skipped.get("다시 열렸던 이슈의 시작 날짜 ≠ Actual start", 0) + 1
         elif start and actual and start != actual:
             found.append(Finding(i, f"시작 날짜 {start} ≠ Actual start {actual}", 3, MISMATCH))
+        ok = exceptions.get(i.key, {})  # 사용자가 이 이슈에서 맞다고 인정한 값
         if i.support and i.support != EXPECT_SUPPORT:
-            found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
+            if ok.get("support") == i.support:
+                skipped["개별 예외로 인정"] = skipped.get("개별 예외로 인정", 0) + 1
+            else:
+                found.append(Finding(i, f"엔지니어 지원 방법 '{i.support}' → {EXPECT_SUPPORT}", 3, MISMATCH))
         if i.category:
             want = (PROJECT_CHILD_CATEGORY if i.parent in project_parents and i.kind != MEETING_KIND
                     else EXPECT_CATEGORY)
-            if i.category != want:
+            if i.category != want and ok.get("category") == i.category:
+                skipped["개별 예외로 인정"] = skipped.get("개별 예외로 인정", 0) + 1
+            elif i.category != want:
                 found.append(Finding(i, f"이슈 분류 '{i.category}' → {want}", 3, MISMATCH))
 
     found.sort(key=lambda f: (f.severity, f.issue.duedate or dt.date.max))

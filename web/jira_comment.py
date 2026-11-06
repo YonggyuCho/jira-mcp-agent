@@ -49,7 +49,7 @@ def _in_scope(c, key: str) -> tuple[bool, str, str]:
     if f["project"]["key"] == project and key in _table_keys():
         return True, "", f.get("summary") or ""
     if f["project"]["key"] != project or solution not in sols:
-        return False, f"{solution} 이슈에만 댓글을 달 수 있습니다", f.get("summary") or ""
+        return False, f"{solution} 이슈만 다룰 수 있습니다", f.get("summary") or ""
     return True, "", f.get("summary") or ""
 
 

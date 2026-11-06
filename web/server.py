@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from agent import render as report_text, store
 
-from . import jira_comment, jira_form
+from . import jira_comment, jira_form, jira_status
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "app.html"
@@ -58,6 +58,7 @@ def _report(run: dict, prev: dict | None) -> tuple[dict | None, dict]:
             "title": i["summary"], "kind": i["kind"], "status": i["status"], "assignee": i.get("assignee") or "",
             "due": i.get("duedate") or "-", "compliance": i.get("compliance") or "-",
             "risk": r["risk"], "mismatch": r["mismatch"], "new": i["key"] in d["new"],
+            "done": bool(i.get("done")), "in_scope": r.get("in_scope", True),
         })
     counts = {"위험": rep["risk"], "불일치": rep["mismatch"], "정상": rep["ok"], "전체": rep["total"],
               "상태별": ", ".join(f"{k} {v}" for k, v in sorted(rep["counts"].items()))}
@@ -65,6 +66,7 @@ def _report(run: dict, prev: dict | None) -> tuple[dict | None, dict]:
         "title": run.get("title") or f"{rep['solution']} {rep['today']}",
         "at": _at(run["at"]), "trigger": TRIGGER.get(run["trigger"], run["trigger"]),
         "outcome": OUTCOME.get(run["outcome"], run["outcome"]), "webhook": run.get("webhook_status") or "",
+        "today": rep["today"], "status_enabled": jira_status.enabled(),
         "counts": counts, "skipped": ", ".join(f"{k} {v}건" for k, v in rep.get("skipped", {}).items()),
         "rows": rows,
     }
@@ -216,6 +218,11 @@ class Handler(BaseHTTPRequestHandler):
             key = (parse_qs(url.query).get("key") or [""])[0].strip().upper()
             return self._send(200, json.dumps(jira_comment.list_comments(key), ensure_ascii=False).encode(),
                               "application/json; charset=utf-8")
+        if path == "/status":
+            # 상태 바꾸기 창 — 지금 가능한 전환과 다시 넣을 칸의 현재 값 (읽기 토큰)
+            key = (parse_qs(url.query).get("key") or [""])[0].strip().upper()
+            return self._send(200, json.dumps(jira_status.options(key), ensure_ascii=False).encode(),
+                              "application/json; charset=utf-8")
         if path == "/healthz":
             return self._send(200, b"ok", "text/plain")
         return self._send(404, b"not found", "text/plain")
@@ -252,6 +259,16 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(min(n, MAX_BODY)) or b"{}")
                 result = jira_comment.add_comment(str(body.get("key") or "").strip().upper(), str(body.get("text") or ""),
                                                   body.get("images") or [])
+            except (ValueError, AttributeError) as exc:
+                result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}"}
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+        if path == "/action/status":
+            # 상태 바꾸기 — 쓰기 토큰. 지금 가능한 전환인지, 허용 범위인지 서버가 다시 확인한다.
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(min(n, 200_000)) or b"{}")
+                result = jira_status.change(str(body.get("key") or "").strip().upper(), str(body.get("transition") or ""),
+                                            body.get("values") or {})
             except (ValueError, AttributeError) as exc:
                 result = {"ok": False, "error": f"요청을 읽지 못했습니다: {exc}"}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")

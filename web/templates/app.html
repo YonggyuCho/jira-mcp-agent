@@ -113,6 +113,10 @@ button{font:inherit;color:inherit}
 
 /* ===== 도구 바 ===== */
 .toolbar{margin-top:24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.drange{display:inline-flex;align-items:center;gap:6px;padding:0 8px;height:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);font-size:13px;color:var(--text-2)}
+.drange.on{border-color:var(--accent);background:var(--accent-bg)}
+.drange .dl{font-weight:700}
+.drange input{border:0;background:transparent;color:var(--text);font:inherit;font-size:13px;width:128px}
 .seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface)}
 .seg button{border:0;background:none;padding:0 12px;height:32px;font-size:13px;font-weight:600;color:var(--text-2);cursor:pointer;white-space:nowrap}
 .seg button+button{border-left:1px solid var(--border)}
@@ -258,7 +262,7 @@ table.runs{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
 .fld label.lb{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:5px}
 .fld label.lb .req{color:var(--risk);margin-left:2px}
 .fld label.lb .hintx{font-weight:400;color:var(--text-3);margin-left:6px}
-.fld input[type=text],.fld input[type=date],.fld input[type=time],.fld select,.fld textarea{width:100%;height:36px;padding:0 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+.fld input[type=text],.fld input[type=date],.fld input[type=time],.fld input[type=datetime-local],.fld select,.fld textarea{width:100%;height:36px;padding:0 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
 .fld textarea{height:auto;min-height:120px;padding:8px 10px;line-height:1.5;resize:vertical}
 .fld input.bad,.fld textarea.bad,.fld select.bad{border-color:var(--risk);background:var(--risk-bg)}
 .fld .two{display:flex;gap:8px}
@@ -294,6 +298,19 @@ pre.payload{margin:0;max-height:360px;overflow:auto;background:var(--surface-2);
 .cbtn{margin-left:6px;padding:0 4px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;line-height:20px;vertical-align:1px}
 .cbtn:hover{border-color:var(--accent)}
 dialog#cdlg{width:min(600px,calc(100vw - 32px))}
+.sbtn{margin-left:6px;padding:0 5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text-2);cursor:pointer;font-size:12px;line-height:20px;vertical-align:1px}
+.sbtn:hover{border-color:var(--accent);color:var(--accent)}
+dialog#sdlg{width:min(560px,calc(100vw - 32px))}
+#sdlg #st-trans{margin:12px 0}
+#sdlg .fgrid{margin:4px 0 8px}
+#sdlg .pill:has(input:checked){border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:700}
+#sdlg .pill.off{opacity:.5;cursor:not-allowed}
+.dd{white-space:nowrap}
+.dd::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:transparent}
+.dd.red::before{background:var(--risk)}.dd.orange::before{background:#F07800}.dd.yellow::before{background:#E8B500}.dd.gray::before{background:var(--text-3)}
+.dd.red{color:var(--risk);font-weight:600}
+.tasks button.flag{cursor:pointer;font:inherit;font-size:12px}
+.tasks button.flag:hover{filter:brightness(.95);text-decoration:underline}
 .chead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.chead h3{margin:0}.chead .ct{font-size:13px;color:var(--text-2);flex:1;min-width:0}
 .clist{margin:12px 0;max-height:42vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .citem{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
@@ -374,6 +391,7 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div class="toolbar" id="toolbar">
     <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">프로젝트별로 묶기</button></div>
     <input class="search" id="q" type="search" placeholder="키 · 제목 · 이유 · 담당 검색">
+    <span class="drange" id="drange"><span class="dl">기한</span><input type="date" id="d-from" aria-label="기한 시작"><span>~</span><input type="date" id="d-to" aria-label="기한 끝"></span>
     <span class="count" id="count"></span>
     <button class="linkbtn" id="reset" hidden>필터 모두 해제</button>
     <span class="hint">머리글을 누르면 정렬, 아래 칸으로 필터</span>
@@ -465,6 +483,21 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div class="row"><button class="btn" type="button" id="cm-close">닫기</button><button class="btn primary" type="button" id="cm-send">댓글 달기</button></div>
 </div></dialog>
 
+<dialog id="sdlg"><div class="dlg">
+  <div class="chead"><h3 id="st-key"></h3><span class="ct" id="st-title"></span><a id="st-open" target="_blank" rel="noopener" style="font-size:12px">Jira 에서 열기</a></div>
+  <div class="cnote" id="st-now"></div>
+  <div class="pills" id="st-trans"></div>
+  <div class="fgrid" id="st-fields" hidden>
+    <div class="fld" id="st-f-start"><label class="lb" for="st-start">Actual start<span class="req">*</span><span class="hintx">전환하면 Jira 가 지금 시각으로 덮어서 이 값으로 다시 넣음</span></label><input type="datetime-local" id="st-start"></div>
+    <div class="fld" id="st-f-end"><label class="lb" for="st-end">Actual end<span class="req">*</span><span class="hintx">전환하면 Jira 가 지금 시각으로 덮어서 이 값으로 다시 넣음</span></label><input type="datetime-local" id="st-end"></div>
+    <div class="fld" id="st-f-comp"><label class="lb" for="st-comp">일정 준수 여부<span class="req">*</span><span class="hintx" id="st-comp-hint"></span></label><select id="st-comp"></select></div>
+    <div class="fld" id="st-f-delay"><label class="lb" for="st-delay">지연 사유<span class="req">*</span></label><select id="st-delay"></select></div>
+  </div>
+  <div class="cconfirm" id="st-confirm" hidden></div>
+  <div class="cres" id="st-res"></div>
+  <div class="row"><button class="btn" type="button" id="st-close">닫기</button><button class="btn primary" type="button" id="st-send" disabled>바꾸기</button></div>
+</div></dialog>
+
 <dialog id="dlg"><form method="dialog" class="dlg">
   <h3>지금 Teams 로 발송할까요?</h3>
   <p>Jira 를 새로 읽은 뒤 결과를 Teams 로 보냅니다.</p>
@@ -500,12 +533,22 @@ const COLS = [
   {id:"kind",     label:"유형",       cls:"c-kind",     f:"set",  vals:r=>[r.kind]},
   {id:"status",   label:"상태",       cls:"c-status",   f:"set",  vals:r=>[r.status]},
   {id:"assignee", label:"담당",       cls:"c-assignee", f:"set",  vals:r=>[r.assignee||"없음"]},
-  {id:"due",      label:"기한",       cls:"c-due",      f:null,   text:r=>r.due},
+  {id:"due",      label:"기한",       cls:"c-due",      f:"set",  vals:r=>[dueBucket(r)], sort:(a,b)=>(a.due==="-"?"9":a.due).localeCompare(b.due==="-"?"9":b.due)},
   {id:"compliance",label:"일정 준수", cls:"c-comp",     f:"set",  vals:r=>[r.compliance], sort:(a,b)=>(COMP_RANK[a.compliance]??9)-(COMP_RANK[b.compliance]??9)},
   {id:"reason",   label:"이유",       cls:"c-reason",   f:"text", text:r=>r.risk.concat(r.mismatch).join(" ") || "정상"}
 ];
 
-const state = {sort:{col:"verdict",dir:1}, sets:{}, texts:{}, group:"flat", q:"", closed:new Set()};
+const state = {sort:{col:"verdict",dir:1}, sets:{}, texts:{}, group:"flat", q:"", closed:new Set(), dFrom:"", dTo:""};
+
+/* 기한 묶음 — 진행 중 작업 카드의 색과 같은 기준 (R54·R55). 종료된 이슈는 기한과 상관없이 '종료' */
+const DUE_ORDER = ["지남", "오늘·내일", "2일 이상", "기한 없음", "종료"];
+const DUE_CLS = {"지남":"red", "오늘·내일":"orange", "2일 이상":"yellow", "기한 없음":"gray"};
+function dueBucket(r){
+  if(r.done) return "종료";
+  if(!r.due || r.due==="-") return "기한 없음";
+  const left = Math.round((Date.parse(r.due) - Date.parse(REPORT.today)) / 86400000);
+  return left < 0 ? "지남" : left <= 1 ? "오늘·내일" : "2일 이상";
+}
 
 /* ===== 셀 렌더 ===== */
 function cell(c, r){
@@ -517,9 +560,10 @@ function cell(c, r){
       + (PAGE==="today" ? `<button class="cbtn" type="button" data-c="${esc(r.key)}" title="댓글 보기·달기" aria-label="${esc(r.key)} 댓글">💬</button>` : "");
     case "title": return esc(r.title);
     case "kind": { const m = r.kind.match(/^(.+?)(\(.+\))$/); return m ? `${esc(m[1])}<span class="kind-sub">${esc(m[2])}</span>` : esc(r.kind); }
-    case "status": return `<span class="st ${r.status==="종료"?"done":""}">${esc(r.status)}</span>`;
+    case "status": return `<span class="st ${r.status==="종료"?"done":""}">${esc(r.status)}</span>`
+      + (PAGE==="today" && REPORT.status_enabled && r.in_scope!==false ? `<button class="sbtn" type="button" data-s="${esc(r.key)}" title="상태 바꾸기" aria-label="${esc(r.key)} 상태 바꾸기">✎</button>` : "");
     case "assignee": return r.assignee ? esc(r.assignee) : '<span class="none">없음</span>';
-    case "due": return esc(r.due);
+    case "due": { const b = dueBucket(r); return `<span class="dd ${DUE_CLS[b]||""}" title="${esc(b)}">${esc(r.due)}</span>`; }
     case "compliance": return `<span class="${r.compliance==="Delayed"?"comp-delayed":""}">${esc(r.compliance)}</span>`;
     case "reason": {
       const li = r.risk.map(t=>`<li class="r">${esc(t)}</li>`).concat(r.mismatch.map(t=>`<li class="m">${esc(t)}</li>`));
@@ -562,6 +606,12 @@ function visibleRows(){
       const hay = [r.key,r.title,r.epic,r.project,r.assignee,r.kind,...r.risk,...r.mismatch].join(" ").toLowerCase();
       if(!hay.includes(q)) return false;
     }
+    // 기한 기간 (달력) — 둘 중 하나만 넣어도 된다. 기한이 없는 이슈는 기간을 넣으면 빠진다
+    if(state.dFrom || state.dTo){
+      if(!r.due || r.due==="-") return false;
+      if(state.dFrom && r.due < state.dFrom) return false;
+      if(state.dTo && r.due > state.dTo) return false;
+    }
     return true;
   });
 }
@@ -591,7 +641,8 @@ function renderBody(){
   } else html = rows.map(trHtml).join("");
   $("#tbody").innerHTML = html;
   $("#count").innerHTML = `<b>${rows.length}</b> / ${REPORT.rows.length}건`;
-  const anyF = Object.values(state.sets).some(s=>s&&s.size) || Object.values(state.texts).some(Boolean) || state.q;
+  const anyF = Object.values(state.sets).some(s=>s&&s.size) || Object.values(state.texts).some(Boolean) || state.q || state.dFrom || state.dTo;
+  $("#drange").classList.toggle("on", !!(state.dFrom || state.dTo));
   $("#reset").hidden = !anyF;
 }
 function markCards(){
@@ -717,13 +768,111 @@ $("#cm-send").addEventListener("click", async ()=>{
   }
 });
 
+/* ===== 상태 바꾸기 (현황 페이지, R55) — 지금 가능한 전환만. 바꾸기 전에 한 번 더 확인한다 ===== */
+const ST = {key:null, step:"pick", data:null, tr:null};
+const nowLocal = () => { const d = new Date(Date.now() - new Date().getTimezoneOffset()*60000); return d.toISOString().slice(0,16); };
+function stMode(step){
+  ST.step = step;
+  const confirm = step==="confirm", busy = step==="busy", done = step==="done";
+  $("#st-confirm").hidden = !confirm;
+  $("#st-trans").querySelectorAll("input").forEach(x=>x.disabled = confirm||busy||done);
+  $("#st-fields").querySelectorAll("input,select").forEach(x=>x.disabled = confirm||busy||done);
+  $("#st-send").hidden = done || !(ST.data && ST.data.enabled);
+  $("#st-send").disabled = busy || !ST.tr;
+  $("#st-send").textContent = confirm ? "바꾸기 확정" : busy ? "바꾸는 중…" : "바꾸기";
+  $("#st-close").textContent = confirm ? "돌아가기" : "닫기";
+}
+function stFields(){
+  const t = ST.tr, need = t ? t.need : "";
+  $("#st-fields").hidden = !need;
+  $("#st-f-start").hidden = !need;
+  $("#st-f-end").hidden = $("#st-f-comp").hidden = need!=="close";
+  $("#st-f-delay").hidden = !(need==="close" && $("#st-comp").value==="Delayed");
+  // 종료면 기한과 비교해 일정 준수를 미리 골라 둔다 (바꿀 수 있음)
+  if(need==="close" && ST.data.due && $("#st-end").value){
+    const late = $("#st-end").value.slice(0,10) > ST.data.due;
+    $("#st-comp-hint").textContent = late ? `기한 ${ST.data.due} 보다 늦음` : `기한 ${ST.data.due} 안`;
+  } else $("#st-comp-hint").textContent = "";
+}
+function stRender(d){
+  ST.data = d; ST.tr = null;
+  if(!d.ok){ $("#st-now").innerHTML = `<span style="color:var(--risk)">${esc(d.error||"읽지 못했습니다")}</span>`; $("#st-trans").innerHTML=""; stMode("pick"); $("#st-send").hidden = true; return; }
+  $("#st-title").textContent = d.title || "";
+  $("#st-now").innerHTML = `지금 상태 <b>${esc(d.status)}</b>` + (d.due ? ` · 기한 ${esc(d.due)}` : "")
+    + (d.enabled ? "" : ` · <span style="color:var(--risk)">상태 바꾸기가 꺼져 있어 보기만 됩니다</span>`);
+  $("#st-trans").innerHTML = d.transitions.length
+    ? d.transitions.map(t=>`<label class="pill${t.required.length?" off":""}" title="${t.required.length?"전환 때 Jira 가 따로 묻는 칸: "+esc(t.required.join(", "))+" — Jira 에서 직접":""}"><input type="radio" name="st-tr" value="${esc(t.id)}" ${t.required.length?"disabled":""}>${esc(t.name)} <small>→ ${esc(t.to)}</small></label>`).join("")
+    : `<span class="cnote">지금 할 수 있는 전환이 없습니다.</span>`;
+  $("#st-comp").innerHTML = `<option value="">고르세요</option>` + d.compliance_options.map(o=>`<option ${o===d.compliance && o!=="Not Evaluated"?"selected":""}>${esc(o)}</option>`).join("");
+  $("#st-delay").innerHTML = `<option value="">고르세요</option>` + d.delay_options.map(o=>`<option ${o===d.delay?"selected":""}>${esc(o)}</option>`).join("");
+  $("#st-start").value = d.actual_start || nowLocal();
+  $("#st-end").value = nowLocal();
+  stFields(); stMode("pick");
+}
+async function openStatus(key){
+  const row = REPORT.rows.find(r=>r.key===key) || {};
+  ST.key = key; ST.data = null; ST.tr = null;
+  $("#st-key").textContent = key; $("#st-title").textContent = row.title || ""; $("#st-open").href = row.url || "#";
+  $("#st-res").textContent = ""; $("#st-res").className = "cres"; $("#st-trans").innerHTML = ""; $("#st-fields").hidden = true;
+  $("#st-now").innerHTML = `<span class="spin"></span> Jira 에서 지금 가능한 전환을 읽는 중…`; stMode("pick"); $("#st-send").hidden = true;
+  $("#sdlg").showModal();
+  try{ const r = await fetch("/status?key="+encodeURIComponent(key)); stRender(await r.json()); }
+  catch(e){ stRender({ok:false, error:"읽지 못했습니다: "+e.message}); }
+}
+$("#st-trans").addEventListener("change", e=>{
+  ST.tr = ST.data.transitions.find(t=>t.id===e.target.value) || null;
+  $("#st-res").textContent = ""; stFields(); stMode("pick");
+});
+$("#st-comp").addEventListener("change", stFields);
+$("#st-end").addEventListener("change", stFields);
+$("#st-close").addEventListener("click", ()=>{ ST.step==="confirm" ? stMode("pick") : $("#sdlg").close(); });
+$("#st-send").addEventListener("click", async ()=>{
+  const t = ST.tr; if(!t) return;
+  const v = {actual_start:$("#st-start").value, actual_end:$("#st-end").value, compliance:$("#st-comp").value, delay:$("#st-delay").value};
+  if(ST.step==="pick"){
+    const err = t.need && !v.actual_start ? "Actual start 를 넣어 주세요"
+      : t.need==="close" && !v.actual_end ? "Actual end 를 넣어 주세요"
+      : t.need==="close" && !v.compliance ? "일정 준수 여부를 골라 주세요"
+      : t.need==="close" && v.compliance==="Delayed" && !v.delay ? "지연 사유를 골라 주세요" : "";
+    if(err){ $("#st-res").className="cres err"; $("#st-res").textContent = err; return; }
+    const fill = t.need==="start" ? ` 그다음 Actual start 를 ${v.actual_start.replace("T"," ")} 로 다시 넣습니다.`
+      : t.need==="close" ? ` 그다음 Actual start ${v.actual_start.replace("T"," ")} · Actual end ${v.actual_end.replace("T"," ")} · 일정 준수 ${v.compliance}${v.compliance==="Delayed"?" ("+v.delay+")":""} 를 넣습니다.` : "";
+    $("#st-res").textContent = "";
+    $("#st-confirm").innerHTML = `<b>${esc(ST.key)}</b> 를 <b>${esc(ST.data.status)} → ${esc(t.to)}</b> ('${esc(t.name)}') 로 바꿉니다.${esc(fill)} Jira 에 바로 반영됩니다. 바꿀까요?`;
+    stMode("confirm"); return;
+  }
+  if(ST.step!=="confirm") return;
+  stMode("busy");
+  try{
+    const r = await fetch("/action/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({key:ST.key, transition:t.id, values:v})});
+    const res = await r.json();
+    if(res.ok){
+      const row = REPORT.rows.find(x=>x.key===ST.key);
+      if(row){ row.status = res.status; row.done = t.cat==="done"; render(); }
+      $("#st-res").className = "cres ok";
+      $("#st-res").innerHTML = `✓ ${esc(res.done.join(" · "))} — <a href="${esc(res.url)}" target="_blank" rel="noopener">Jira 에서 보기</a><br><small>표의 판정(위험·불일치)은 다음 점검 때 새로 계산됩니다 — 바로 보려면 '미리보기'</small>`;
+      stMode("done");
+    } else {
+      $("#st-res").className = "cres err"; $("#st-res").textContent = "✕ " + (res.error||"바꾸지 못했습니다"); stMode("pick");
+    }
+  }catch(e){
+    $("#st-res").className = "cres err"; $("#st-res").textContent = "✕ 응답을 받지 못했습니다 — Jira 에 반영됐을 수 있으니 창을 닫고 Jira 에서 확인하세요."; stMode("pick");
+  }
+});
+
 $("#tbody").addEventListener("click", e=>{
+  const sb = e.target.closest(".sbtn"); if(sb){ e.stopPropagation(); openStatus(sb.dataset.s); return; }
   const cb = e.target.closest(".cbtn"); if(cb){ e.stopPropagation(); openComments(cb.dataset.c); return; }
   const g = e.target.closest("tr.grp"); if(!g) return;
   const n = g.dataset.g; state.closed.has(n) ? state.closed.delete(n) : state.closed.add(n); renderBody();
 });
 $("#q").addEventListener("input", e=>{ state.q = e.target.value; renderBody(); });
-$("#reset").addEventListener("click", ()=>{ state.sets={}; state.texts={}; state.q=""; $("#q").value=""; render(); });
+$("#reset").addEventListener("click", ()=>{ state.sets={}; state.texts={}; state.q=""; $("#q").value=""; state.dFrom=state.dTo=""; $("#d-from").value=$("#d-to").value=""; render(); });
+["#d-from","#d-to"].forEach(id=>$(id).addEventListener("change", ()=>{
+  state.dFrom = $("#d-from").value; state.dTo = $("#d-to").value;
+  if(state.dFrom && state.dTo && state.dFrom > state.dTo){ [state.dFrom, state.dTo] = [state.dTo, state.dFrom]; $("#d-from").value=state.dFrom; $("#d-to").value=state.dTo; }
+  renderBody();
+}));
 $("#seg-group").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(!b) return;
   state.group = b.dataset.v; [...$("#seg-group").children].forEach(x=>x.classList.toggle("on", x===b)); renderBody();
@@ -736,7 +885,8 @@ function openPop(colId, anchor){
   const counts = new Map();
   REPORT.rows.forEach(r=>c.vals(r).forEach(v=>counts.set(v,(counts.get(v)||0)+1)));
   let vals = [...counts.keys()];
-  vals.sort(colId==="verdict" ? (a,b)=>VRANK[a]-VRANK[b] : (a,b)=>a.localeCompare(b,"ko"));
+  vals.sort(colId==="verdict" ? (a,b)=>VRANK[a]-VRANK[b]
+    : colId==="due" ? (a,b)=>DUE_ORDER.indexOf(a)-DUE_ORDER.indexOf(b) : (a,b)=>a.localeCompare(b,"ko"));
   const sel = state.sets[colId] || new Set();
   const all = sel.size===0;
   $("#pop-list").innerHTML =
@@ -1097,7 +1247,7 @@ function renderTasks(){
   const T = REPORT.tasks; if(!T) return;
   const cnt = lv => T.filter(t=>t.flags[0] && t.flags[0].level===lv).length;
   const tally = [["red","지남"],["orange","오늘·내일"],["yellow","2일 이상"],["gray","기한 없음"]]
-    .filter(([lv])=>cnt(lv)).map(([lv,l])=>`<span class="flag ${lv}">${l} ${cnt(lv)}</span>`).join("");
+    .filter(([lv])=>cnt(lv)).map(([lv,l])=>`<button type="button" class="flag ${lv}" data-due="${l==="지남"||l==="오늘·내일"||l==="2일 이상"||l==="기한 없음"?l:""}" title="표를 '${l}' 로 거르기">${l} ${cnt(lv)}</button>`).join("");
   $("#tasks").innerHTML = `<div class="card tasks"><h2>진행 중 작업 ${T.length}건 <small>상위 이슈(프로젝트·구축) 제외 · 기한 순</small>`
     + `<span class="flags" style="display:inline-flex;gap:6px;margin-left:auto">${tally}</span></h2>`
     + (T.length ? T.map(t=>{ const f = t.flags[0] || {level:"gray", text:"기한 없음"}; return `<div class="task ${f.level}"><span class="dot"></span>
@@ -1107,6 +1257,12 @@ function renderTasks(){
       </div>`; }).join("") : `<div class="facts" style="color:var(--text-3)">진행 중인 작업이 없습니다</div>`)
     + `</div>`;
 }
+// 카드의 색 칩 = 표의 기한 필터 (R55)
+$("#tasks").addEventListener("click", e=>{
+  const b = e.target.closest("[data-due]"); if(!b || !b.dataset.due) return;
+  state.sets.due = new Set([b.dataset.due]); render();
+  $("#toolbar").scrollIntoView({behavior:"smooth", block:"start"});
+});
 function renderDiff(){
   const d = DATA.diff; if(!d || !d.base) return;
   // 이전 리포트와 비교해 위험·불일치 목록에 새로 들어온 이슈 / 목록에서 빠진 이슈
