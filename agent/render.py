@@ -16,7 +16,8 @@ def show_open_tasks() -> bool:
 
 def task_facts(t: dict) -> str:
     """진행 N일 · 기한 … · 마지막 수정 …"""
-    run = f"진행 {t['running']}일째" if t["running"] is not None else "실제 시작 없음"
+    r = t["running"]
+    run = ("실제 시작 없음" if r is None else f"{-r}일 뒤 시작" if r < 0 else f"진행 {r}일째")
     idle = ("오늘 수정" if t["idle"] == 0 else f"마지막 수정 {t['idle']}일 전") if t["idle"] is not None else ""
     return " · ".join(x for x in (t["flags"][0]["text"], run, idle) if x)
 

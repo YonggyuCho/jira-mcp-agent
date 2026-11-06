@@ -24,6 +24,8 @@ log = logging.getLogger("agent.daily")
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="솔루션 일일 현황 취합")
     ap.add_argument("--send", action="store_true", help="dry-run 을 무시하고 실제 발송")
+    ap.add_argument("--no-send", action="store_true",
+                    help=".env 설정과 상관없이 발송하지 않는다 (점검·기록만 — 웹 현황 새로 고침용)")
     ap.add_argument("--no-llm", action="store_true", help="LLM 요약을 건너뛴다")
     ap.add_argument("--trigger", default="manual", choices=["cron", "web", "manual"],
                     help="실행 기록에 남길 출처")
@@ -51,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             text = f"{note}\n\n{text}"
 
     title = render.headline(report)
-    send = args.send or cfg.can_notify
+    send = (args.send or cfg.can_notify) and not args.no_send
 
     if not send:
         reason = "AGENT_WEBHOOK_URL 미설정" if not cfg.webhook_url else "dry-run"
