@@ -113,10 +113,12 @@ button{font:inherit;color:inherit}
 
 /* ===== 도구 바 ===== */
 .toolbar{margin-top:24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.drange{display:inline-flex;align-items:center;gap:6px;padding:0 8px;height:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);font-size:13px;color:var(--text-2)}
-.drange.on{border-color:var(--accent);background:var(--accent-bg)}
-.drange .dl{font-weight:700}
-.drange input{border:0;background:transparent;color:var(--text);font:inherit;font-size:13px;width:128px}
+.pop-range{padding:8px 8px 0}
+.pop-range .pr-h{font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px}
+#pop .pop-range label{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0;font-size:13px;color:var(--text-2);margin-bottom:6px;cursor:default}
+#pop .pop-range label:hover{background:none}
+#pop .pop-range input[type=date]{flex:none;width:150px;height:30px;padding:0 6px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.pop-range .pr-q{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface)}
 .seg button{border:0;background:none;padding:0 12px;height:32px;font-size:13px;font-weight:600;color:var(--text-2);cursor:pointer;white-space:nowrap}
 .seg button+button{border-left:1px solid var(--border)}
@@ -391,7 +393,6 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div class="toolbar" id="toolbar">
     <div class="seg" id="seg-group"><button data-v="flat" class="on">목록</button><button data-v="epic">프로젝트별로 묶기</button></div>
     <input class="search" id="q" type="search" placeholder="키 · 제목 · 이유 · 담당 검색">
-    <span class="drange" id="drange"><span class="dl">기한</span><input type="date" id="d-from" aria-label="기한 시작"><span>~</span><input type="date" id="d-to" aria-label="기한 끝"></span>
     <span class="count" id="count"></span>
     <button class="linkbtn" id="reset" hidden>필터 모두 해제</button>
     <span class="hint">머리글을 누르면 정렬, 아래 칸으로 필터</span>
@@ -459,7 +460,15 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   </div>
 </main>
 
-<div class="pop" id="pop"><div class="pop-list" id="pop-list"></div>
+<div class="pop" id="pop">
+  <div class="pop-range" id="pop-range" hidden>
+    <div class="pr-h">기간으로 거르기</div>
+    <label>부터 <input type="date" id="d-from"></label>
+    <label>까지 <input type="date" id="d-to"></label>
+    <div class="pr-q"><button class="linkbtn" type="button" data-q="week">이번 주</button><button class="linkbtn" type="button" data-q="next">다음 주</button><button class="linkbtn" type="button" data-q="month">이번 달</button><button class="linkbtn" type="button" data-q="clear">기간 지우기</button></div>
+    <div class="pr-h" style="margin-top:8px">묶음으로 거르기</div>
+  </div>
+  <div class="pop-list" id="pop-list"></div>
   <div class="pop-foot"><button class="linkbtn" id="pop-clear">필터 해제</button><button class="linkbtn" id="pop-close">닫기</button></div></div>
 
 <dialog id="vdlg"><form method="dialog" class="dlg">
@@ -581,8 +590,13 @@ function renderHead(){
   }).join("");
   $("#frow").innerHTML = COLS.map(c=>{
     if(c.f==="set"){
-      const sel = state.sets[c.id]; const on = sel && sel.size;
-      return `<th class="${c.cls}"><button class="fbtn${on?" on":""}" data-f="${c.id}"><span>${on ? (sel.size===1 ? esc([...sel][0]) : sel.size+"개 선택") : "(전체)"}</span><span>▾</span></button></th>`;
+      const sel = state.sets[c.id]; let on = sel && sel.size;
+      let label = on ? (sel.size===1 ? esc([...sel][0]) : sel.size+"개 선택") : "(전체)";
+      if(c.id==="due" && (state.dFrom || state.dTo)){  // 달력 기간이 있으면 그걸 보여 준다
+        const md = s => s ? s.slice(5).replace("-","/") : "";
+        label = `📅 ${md(state.dFrom)}~${md(state.dTo)}` + (on ? ` +${sel.size}` : ""); on = true;
+      }
+      return `<th class="${c.cls}"><button class="fbtn${on?" on":""}" data-f="${c.id}" title="${c.id==="due"?"달력으로 기간, 또는 묶음으로 거르기":""}"><span>${label}</span><span>▾</span></button></th>`;
     }
     if(c.f==="text"){
       const v = state.texts[c.id]||"";
@@ -642,7 +656,6 @@ function renderBody(){
   $("#tbody").innerHTML = html;
   $("#count").innerHTML = `<b>${rows.length}</b> / ${REPORT.rows.length}건`;
   const anyF = Object.values(state.sets).some(s=>s&&s.size) || Object.values(state.texts).some(Boolean) || state.q || state.dFrom || state.dTo;
-  $("#drange").classList.toggle("on", !!(state.dFrom || state.dTo));
   $("#reset").hidden = !anyF;
 }
 function markCards(){
@@ -867,12 +880,27 @@ $("#tbody").addEventListener("click", e=>{
   const n = g.dataset.g; state.closed.has(n) ? state.closed.delete(n) : state.closed.add(n); renderBody();
 });
 $("#q").addEventListener("input", e=>{ state.q = e.target.value; renderBody(); });
-$("#reset").addEventListener("click", ()=>{ state.sets={}; state.texts={}; state.q=""; $("#q").value=""; state.dFrom=state.dTo=""; $("#d-from").value=$("#d-to").value=""; render(); });
-["#d-from","#d-to"].forEach(id=>$(id).addEventListener("change", ()=>{
-  state.dFrom = $("#d-from").value; state.dTo = $("#d-to").value;
-  if(state.dFrom && state.dTo && state.dFrom > state.dTo){ [state.dFrom, state.dTo] = [state.dTo, state.dFrom]; $("#d-from").value=state.dFrom; $("#d-to").value=state.dTo; }
-  renderBody();
-}));
+$("#reset").addEventListener("click", ()=>{ state.sets={}; state.texts={}; state.q=""; $("#q").value=""; state.dFrom=state.dTo=""; render(); });
+/* 기한 필터 창 안의 달력 (R55) — 부터·까지. 한쪽만 넣어도 된다. 거꾸로 넣으면 바꿔 준다 */
+function setRange(from, to){
+  if(from && to && from > to) [from, to] = [to, from];
+  state.dFrom = from || ""; state.dTo = to || "";
+  $("#d-from").value = state.dFrom; $("#d-to").value = state.dTo;
+  render();
+}
+["#d-from","#d-to"].forEach(id=>$(id).addEventListener("change", ()=>setRange($("#d-from").value, $("#d-to").value)));
+$("#pop-range").addEventListener("click", e=>{
+  const b = e.target.closest("[data-q]"); if(!b) return;
+  e.stopPropagation();
+  const ymd = d => new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const t = new Date(REPORT.today + "T00:00:00"), dow = (t.getDay()+6)%7;  // 월요일 = 0
+  const mon = new Date(t); mon.setDate(t.getDate()-dow);
+  const add = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+  if(b.dataset.q==="week") setRange(ymd(mon), ymd(add(mon,6)));
+  else if(b.dataset.q==="next") setRange(ymd(add(mon,7)), ymd(add(mon,13)));
+  else if(b.dataset.q==="month") setRange(ymd(new Date(t.getFullYear(), t.getMonth(), 1)), ymd(new Date(t.getFullYear(), t.getMonth()+1, 0)));
+  else setRange("", "");
+});
 $("#seg-group").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(!b) return;
   state.group = b.dataset.v; [...$("#seg-group").children].forEach(x=>x.classList.toggle("on", x===b)); renderBody();
@@ -889,6 +917,8 @@ function openPop(colId, anchor){
     : colId==="due" ? (a,b)=>DUE_ORDER.indexOf(a)-DUE_ORDER.indexOf(b) : (a,b)=>a.localeCompare(b,"ko"));
   const sel = state.sets[colId] || new Set();
   const all = sel.size===0;
+  $("#pop-range").hidden = colId!=="due";
+  $("#d-from").value = state.dFrom; $("#d-to").value = state.dTo;
   $("#pop-list").innerHTML =
     `<label class="all"><input type="checkbox" data-all ${all?"checked":""}><span class="v">(전체)</span></label>` +
     vals.map(v=>`<label><input type="checkbox" value="${esc(v)}" ${all||sel.has(v)?"checked":""}><span class="v">${colId==="verdict"?`<span class="badge ${VCLS[v]}">${v}</span>`:esc(v)}</span><span class="c">${counts.get(v)}</span></label>`).join("");
@@ -908,7 +938,7 @@ $("#pop-list").addEventListener("change", e=>{
 });
 function closePop(){ $("#pop").classList.remove("open"); popCol=null; }
 $("#pop-close").addEventListener("click", closePop);
-$("#pop-clear").addEventListener("click", ()=>{ state.sets[popCol]=new Set(); render(); closePop(); });
+$("#pop-clear").addEventListener("click", ()=>{ state.sets[popCol]=new Set(); if(popCol==="due"){ state.dFrom=state.dTo=""; } render(); closePop(); });
 document.addEventListener("click", e=>{ if(!e.target.closest("#pop")) closePop(); });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") closePop(); });
 
