@@ -115,6 +115,7 @@ button{font:inherit;color:inherit}
 .toolbar{margin-top:24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .pop-range{padding:8px 8px 0}
 .pop-range .pr-h{font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px}
+.pop-range .pr-q{border-bottom:0 !important}
 #pop .pop-range label{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0;font-size:13px;color:var(--text-2);margin-bottom:6px;cursor:default}
 #pop .pop-range label:hover{background:none}
 #pop .pop-range input[type=date]{flex:none;width:150px;height:30px;padding:0 6px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
@@ -311,8 +312,6 @@ dialog#sdlg{width:min(560px,calc(100vw - 32px))}
 .dd::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:transparent}
 .dd.red::before{background:var(--risk)}.dd.orange::before{background:#F07800}.dd.yellow::before{background:#E8B500}.dd.gray::before{background:var(--text-3)}
 .dd.red{color:var(--risk);font-weight:600}
-.tasks button.flag{cursor:pointer;font:inherit;font-size:12px}
-.tasks button.flag:hover{filter:brightness(.95);text-decoration:underline}
 .chead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.chead h3{margin:0}.chead .ct{font-size:13px;color:var(--text-2);flex:1;min-width:0}
 .clist{margin:12px 0;max-height:42vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .citem{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
@@ -466,7 +465,6 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
     <label>부터 <input type="date" id="d-from"></label>
     <label>까지 <input type="date" id="d-to"></label>
     <div class="pr-q"><button class="linkbtn" type="button" data-q="week">이번 주</button><button class="linkbtn" type="button" data-q="next">다음 주</button><button class="linkbtn" type="button" data-q="month">이번 달</button><button class="linkbtn" type="button" data-q="clear">기간 지우기</button></div>
-    <div class="pr-h" style="margin-top:8px">묶음으로 거르기</div>
   </div>
   <div class="pop-list" id="pop-list"></div>
   <div class="pop-foot"><button class="linkbtn" id="pop-clear">필터 해제</button><button class="linkbtn" id="pop-close">닫기</button></div></div>
@@ -596,7 +594,7 @@ function renderHead(){
         const md = s => s ? s.slice(5).replace("-","/") : "";
         label = `📅 ${md(state.dFrom)}~${md(state.dTo)}` + (on ? ` +${sel.size}` : ""); on = true;
       }
-      return `<th class="${c.cls}"><button class="fbtn${on?" on":""}" data-f="${c.id}" title="${c.id==="due"?"달력으로 기간, 또는 묶음으로 거르기":""}"><span>${label}</span><span>▾</span></button></th>`;
+      return `<th class="${c.cls}"><button class="fbtn${on?" on":""}" data-f="${c.id}" title="${c.id==="due"?"달력으로 기간 거르기":""}"><span>${label}</span><span>▾</span></button></th>`;
     }
     if(c.f==="text"){
       const v = state.texts[c.id]||"";
@@ -917,7 +915,8 @@ function openPop(colId, anchor){
     : colId==="due" ? (a,b)=>DUE_ORDER.indexOf(a)-DUE_ORDER.indexOf(b) : (a,b)=>a.localeCompare(b,"ko"));
   const sel = state.sets[colId] || new Set();
   const all = sel.size===0;
-  $("#pop-range").hidden = colId!=="due";
+  // 기한은 달력(기간)만 — 묶음 체크는 두지 않는다 (사용자 11-06)
+  $("#pop-range").hidden = colId!=="due"; $("#pop-list").hidden = colId==="due";
   $("#d-from").value = state.dFrom; $("#d-to").value = state.dTo;
   $("#pop-list").innerHTML =
     `<label class="all"><input type="checkbox" data-all ${all?"checked":""}><span class="v">(전체)</span></label>` +
@@ -1277,7 +1276,7 @@ function renderTasks(){
   const T = REPORT.tasks; if(!T) return;
   const cnt = lv => T.filter(t=>t.flags[0] && t.flags[0].level===lv).length;
   const tally = [["red","지남"],["orange","오늘·내일"],["yellow","2일 이상"],["gray","기한 없음"]]
-    .filter(([lv])=>cnt(lv)).map(([lv,l])=>`<button type="button" class="flag ${lv}" data-due="${l==="지남"||l==="오늘·내일"||l==="2일 이상"||l==="기한 없음"?l:""}" title="표를 '${l}' 로 거르기">${l} ${cnt(lv)}</button>`).join("");
+    .filter(([lv])=>cnt(lv)).map(([lv,l])=>`<span class="flag ${lv}">${l} ${cnt(lv)}</span>`).join("");
   $("#tasks").innerHTML = `<div class="card tasks"><h2>진행 중 작업 ${T.length}건 <small>상위 이슈(프로젝트·구축) 제외 · 기한 순</small>`
     + `<span class="flags" style="display:inline-flex;gap:6px;margin-left:auto">${tally}</span></h2>`
     + (T.length ? T.map(t=>{ const f = t.flags[0] || {level:"gray", text:"기한 없음"}; return `<div class="task ${f.level}"><span class="dot"></span>
@@ -1287,12 +1286,6 @@ function renderTasks(){
       </div>`; }).join("") : `<div class="facts" style="color:var(--text-3)">진행 중인 작업이 없습니다</div>`)
     + `</div>`;
 }
-// 카드의 색 칩 = 표의 기한 필터 (R55)
-$("#tasks").addEventListener("click", e=>{
-  const b = e.target.closest("[data-due]"); if(!b || !b.dataset.due) return;
-  state.sets.due = new Set([b.dataset.due]); render();
-  $("#toolbar").scrollIntoView({behavior:"smooth", block:"start"});
-});
 function renderDiff(){
   const d = DATA.diff; if(!d || !d.base) return;
   // 이전 리포트와 비교해 위험·불일치 목록에 새로 들어온 이슈 / 목록에서 빠진 이슈
