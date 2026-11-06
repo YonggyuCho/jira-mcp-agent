@@ -308,6 +308,12 @@ dialog#sdlg{width:min(560px,calc(100vw - 32px))}
 #sdlg .fgrid{margin:4px 0 8px}
 #sdlg .pill:has(input:checked){border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:700}
 #sdlg .pill.off{opacity:.5;cursor:not-allowed}
+#sdlg .src{margin-left:8px;padding:0 7px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--border)}
+#sdlg .src.prev{color:var(--accent);background:var(--accent-bg);border-color:var(--accent)}
+#sdlg .src.now{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-border)}
+#sdlg .src.edit{color:var(--text-2)}
+#sdlg .qset{display:flex;gap:12px;margin-top:4px;font-size:12px}
+#sdlg #st-fnote{margin:0 0 8px}
 .dd{white-space:nowrap}
 .dd::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:transparent}
 .dd.red::before{background:var(--risk)}.dd.orange::before{background:#F07800}.dd.yellow::before{background:#E8B500}.dd.gray::before{background:var(--text-3)}
@@ -494,9 +500,12 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
   <div class="chead"><h3 id="st-key"></h3><span class="ct" id="st-title"></span><a id="st-open" target="_blank" rel="noopener" style="font-size:12px">Jira 에서 열기</a></div>
   <div class="cnote" id="st-now"></div>
   <div class="pills" id="st-trans"></div>
+  <div class="cnote" id="st-fnote" hidden>전환하면 Jira 가 시각을 지금으로 덮어씁니다. 그 뒤에 아래 값으로 다시 넣습니다.</div>
   <div class="fgrid" id="st-fields" hidden>
-    <div class="fld" id="st-f-start"><label class="lb" for="st-start">Actual start<span class="req">*</span><span class="hintx">전환하면 Jira 가 지금 시각으로 덮어서 이 값으로 다시 넣음</span></label><input type="datetime-local" id="st-start"></div>
-    <div class="fld" id="st-f-end"><label class="lb" for="st-end">Actual end<span class="req">*</span><span class="hintx">전환하면 Jira 가 지금 시각으로 덮어서 이 값으로 다시 넣음</span></label><input type="datetime-local" id="st-end"></div>
+    <div class="fld" id="st-f-start"><label class="lb" for="st-start">Actual start<span class="req">*</span><span class="src" id="st-start-src"></span></label><input type="datetime-local" id="st-start">
+      <div class="qset"><button type="button" class="linkbtn" data-set="start:prev" id="st-start-prev"></button><button type="button" class="linkbtn" data-set="start:now">지금</button></div></div>
+    <div class="fld" id="st-f-end"><label class="lb" for="st-end">Actual end<span class="req">*</span><span class="src" id="st-end-src"></span></label><input type="datetime-local" id="st-end">
+      <div class="qset"><button type="button" class="linkbtn" data-set="end:prev" id="st-end-prev"></button><button type="button" class="linkbtn" data-set="end:now">지금</button></div></div>
     <div class="fld" id="st-f-comp"><label class="lb" for="st-comp">일정 준수 여부<span class="req">*</span><span class="hintx" id="st-comp-hint"></span></label><select id="st-comp"></select></div>
     <div class="fld" id="st-f-delay"><label class="lb" for="st-delay">지연 사유<span class="req">*</span></label><select id="st-delay"></select></div>
   </div>
@@ -795,8 +804,13 @@ function stMode(step){
 }
 function stFields(){
   const t = ST.tr, need = t ? t.need : "";
-  $("#st-fields").hidden = !need;
+  $("#st-fields").hidden = $("#st-fnote").hidden = !need;
   $("#st-f-start").hidden = !need;
+  // 시작이 끝보다 늦으면 바로 알린다
+  const bad = need==="close" && $("#st-start").value && $("#st-end").value && $("#st-start").value > $("#st-end").value;
+  $("#st-start").classList.toggle("bad", !!bad); $("#st-end").classList.toggle("bad", !!bad);
+  $("#st-res").className = bad ? "cres err" : "cres"; if(bad) $("#st-res").textContent = "Actual start 가 Actual end 보다 늦습니다";
+  else if($("#st-res").textContent === "Actual start 가 Actual end 보다 늦습니다") $("#st-res").textContent = "";
   $("#st-f-end").hidden = $("#st-f-comp").hidden = need!=="close";
   $("#st-f-delay").hidden = !(need==="close" && $("#st-comp").value==="Delayed");
   // 종료면 기한과 비교해 일정 준수를 미리 골라 둔다 (바꿀 수 있음)
@@ -816,10 +830,28 @@ function stRender(d){
     : `<span class="cnote">지금 할 수 있는 전환이 없습니다.</span>`;
   $("#st-comp").innerHTML = `<option value="">고르세요</option>` + d.compliance_options.map(o=>`<option ${o===d.compliance && o!=="Not Evaluated"?"selected":""}>${esc(o)}</option>`).join("");
   $("#st-delay").innerHTML = `<option value="">고르세요</option>` + d.delay_options.map(o=>`<option ${o===d.delay?"selected":""}>${esc(o)}</option>`).join("");
-  $("#st-start").value = d.actual_start || nowLocal();
-  $("#st-end").value = nowLocal();
+  // 기본값: 시작은 Jira 에 있던 값(없으면 지금), 끝은 지금. 칸마다 어디서 온 값인지 보여 주고 버튼으로 바꾼다
+  stSet("start", d.actual_start ? "prev" : "now"); stSet("end", "now");
+  for(const f of ["start","end"]){
+    const v = d["actual_"+f], b = $(`#st-${f}-prev`);
+    b.hidden = !v; b.textContent = v ? `Jira 값 (${v.replace("T"," ")})` : "";
+  }
   stFields(); stMode("pick");
 }
+function stSet(f, how){
+  $(`#st-${f}`).value = how==="prev" ? ST.data["actual_"+f] : nowLocal();
+  stSrc(f, how);
+}
+function stSrc(f, how){
+  const el = $(`#st-${f}-src`);
+  el.textContent = how==="prev" ? "Jira 에 있던 값" : how==="now" ? "지금 시각" : "직접 입력";
+  el.className = "src " + how;
+}
+$("#st-fields").addEventListener("click", e=>{
+  const b = e.target.closest("[data-set]"); if(!b) return;
+  const [f, how] = b.dataset.set.split(":"); stSet(f, how); stFields();
+});
+["start","end"].forEach(f=>$(`#st-${f}`).addEventListener("input", ()=>{ stSrc(f, "edit"); stFields(); }));
 async function openStatus(key){
   const row = REPORT.rows.find(r=>r.key===key) || {};
   ST.key = key; ST.data = null; ST.tr = null;
@@ -843,6 +875,7 @@ $("#st-send").addEventListener("click", async ()=>{
   if(ST.step==="pick"){
     const err = t.need && !v.actual_start ? "Actual start 를 넣어 주세요"
       : t.need==="close" && !v.actual_end ? "Actual end 를 넣어 주세요"
+      : t.need==="close" && v.actual_start > v.actual_end ? "Actual start 가 Actual end 보다 늦습니다"
       : t.need==="close" && !v.compliance ? "일정 준수 여부를 골라 주세요"
       : t.need==="close" && v.compliance==="Delayed" && !v.delay ? "지연 사유를 골라 주세요" : "";
     if(err){ $("#st-res").className="cres err"; $("#st-res").textContent = err; return; }

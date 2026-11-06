@@ -139,6 +139,9 @@ def change(key: str, tid: str, values: dict) -> dict:
                 return result
             put[F["delay"]] = {"value": values["delay"]}
         # 진행 중을 거치지 않고 바로 종료하는 경우도 Actual start 를 지켜 준다
+        if DT.match(values.get("actual_start") or "") and values["actual_start"] > values["actual_end"]:
+            result["error"] = "Actual start 가 Actual end 보다 늦습니다"
+            return result
         if DT.match(values.get("actual_start") or ""):
             put[F["actual_start"]] = _jira_dt(values["actual_start"])
 
