@@ -5,7 +5,8 @@
 
 Jira 자동화가 전환 때 시각을 덮는다 (등록 때와 같음, docs/WEB.md). 취소·중단 같은 다른 전환은 값을 묻지 않는다:
   - 진행 중으로 가는 전환('작업 시작') → Actual start 를 지금으로 덮음
-  - 종료로 가는 전환('종결')          → Actual end 를 지금으로 덮음
+  - 종료로 가는 전환('종결')          → Actual end 를 지금으로 덮음 (실무 이슈·회의·기술지원 11-06 이력 확인)
+  - 구축의 '완료'(→ 종료)는 덮는지 이력이 아직 없다 [추정] — 덮든 안 덮든 전환 뒤에 넣으므로 입력값이 남는다
 그래서 전환한 뒤 화면에서 받은 값으로 다시 넣는다. 종료면 일정 준수(+ Delayed 면 지연 사유)도 같이 넣는다 —
 비워 두면 다음 날 리포트에 'Not Evaluated' 위험으로 잡힌다.
 
@@ -51,8 +52,9 @@ def _transitions(c, key: str) -> list[dict]:
     tr = c.get(f"/issue/{key}/transitions", params={"expand": "transitions.fields"}).get("transitions", [])
     return [{"id": t["id"], "name": t["name"], "to": t["to"]["name"],
              "cat": (t["to"].get("statusCategory") or {}).get("key", ""),
-             # 시각을 덮는 건 '작업 시작'·'종결' 두 전환뿐이다. 취소(완료 범주)·중단(Pending)은 값을 안 묻는다
-             "need": {jira_form.TRANSITIONS["start"]: "start", jira_form.TRANSITIONS["close"]: "close"}.get(t["id"], ""),
+             # 도착 상태 이름으로 정한다 — 전환 id 는 유형(워크플로)마다 다르다 (11-06 실측: 실무 이슈 '종결'=3,
+             # 구축 '완료'=4, 같은 4 가 실무 이슈에선 '취소'). 취소·Pending·다시 열림은 값을 안 묻는다
+             "need": {"진행 중": "start", "종료": "close"}.get(t["to"]["name"], ""),
              "required": [v.get("name") for v in (t.get("fields") or {}).values() if v.get("required")]}
             for t in tr]
 
