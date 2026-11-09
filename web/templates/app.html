@@ -315,9 +315,6 @@ dialog#sdlg{width:min(560px,calc(100vw - 32px))}
 #sdlg .qset{display:flex;gap:12px;margin-top:4px;font-size:12px}
 #sdlg #st-fnote{margin:0 0 8px}
 .dd{white-space:nowrap}
-.dd::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:transparent}
-.dd.red::before{background:var(--risk)}.dd.orange::before{background:#F07800}.dd.yellow::before{background:#E8B500}.dd.gray::before{background:var(--text-3)}
-.dd.red{color:var(--risk);font-weight:600}
 .chead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.chead h3{margin:0}.chead .ct{font-size:13px;color:var(--text-2);flex:1;min-width:0}
 .clist{margin:12px 0;max-height:42vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .citem{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
@@ -558,7 +555,6 @@ const state = {sort:{col:"verdict",dir:1}, sets:{}, texts:{}, group:"flat", q:""
 
 /* 기한 묶음 — 진행 중 작업 카드의 색과 같은 기준 (R54·R55). 종료된 이슈는 기한과 상관없이 '종료' */
 const DUE_ORDER = ["지남", "오늘·내일", "2일 이상", "기한 없음", "종료"];
-const DUE_CLS = {"지남":"red", "오늘·내일":"orange", "2일 이상":"yellow", "기한 없음":"gray"};
 function dueBucket(r){
   if(r.done) return "종료";
   if(!r.due || r.due==="-") return "기한 없음";
@@ -579,7 +575,7 @@ function cell(c, r){
     case "status": return `<span class="st ${r.status==="종료"?"done":""}">${esc(r.status)}</span>`
       + (PAGE==="today" && REPORT.status_enabled && r.in_scope!==false ? `<button class="sbtn" type="button" data-s="${esc(r.key)}" title="상태 바꾸기" aria-label="${esc(r.key)} 상태 바꾸기">✎</button>` : "");
     case "assignee": return r.assignee ? esc(r.assignee) : '<span class="none">없음</span>';
-    case "due": { const b = dueBucket(r); return `<span class="dd ${DUE_CLS[b]||""}" title="${esc(b)}">${esc(r.due)}</span>`; }
+    case "due": return `<span class="dd">${esc(r.due)}</span>`;
     case "compliance": return `<span class="${r.compliance==="Delayed"?"comp-delayed":""}">${esc(r.compliance)}</span>`;
     case "reason": {
       const li = r.risk.map(t=>`<li class="r">${esc(t)}</li>`).concat(r.mismatch.map(t=>`<li class="m">${esc(t)}</li>`));
